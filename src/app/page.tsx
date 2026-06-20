@@ -98,7 +98,7 @@ export default function LandingPage() {
             <Button
               className="gradient-primary text-white border-0"
               render={
-                <Link href="/signup" className="inline-flex items-center gap-1">
+                <Link href="/login" className="inline-flex items-center gap-1">
                   Start for free <ArrowRight className="ml-1 w-4 h-4" />
                 </Link>
               }
@@ -132,8 +132,8 @@ export default function LandingPage() {
               size="lg"
               className="gradient-primary text-white border-0 text-base px-8 h-12"
               render={
-                <Link href="/signup" className="inline-flex items-center gap-2">
-                  Get started free <ArrowRight className="w-5 h-5" />
+                <Link href="/login" className="inline-flex items-center gap-2">
+                  Get started <ArrowRight className="w-5 h-5" />
                 </Link>
               }
             />
@@ -408,7 +408,7 @@ export default function LandingPage() {
                 </ul>
                 <Button
                   className={`w-full ${plan.highlighted ? 'bg-white text-primary hover:bg-white/90 border-0' : 'gradient-primary text-white border-0'}`}
-                  render={<Link href="/signup">{plan.cta}</Link>}
+                  render={<Link href="/login">{plan.cta}</Link>}
                 />
               </motion.div>
             ))}
@@ -451,8 +451,8 @@ export default function LandingPage() {
               size="lg"
               className="gradient-primary text-white border-0 text-base px-10 h-12"
               render={
-                <Link href="/signup" className="inline-flex items-center gap-2">
-                  Start for free — no credit card needed <ArrowRight className="w-5 h-5" />
+                <Link href="/login" className="inline-flex items-center gap-2">
+                  Get started — sign in or create account <ArrowRight className="w-5 h-5" />
                 </Link>
               }
             />

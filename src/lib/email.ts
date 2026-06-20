@@ -1,10 +1,13 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM_EMAIL = 'TaskFlow <noreply@varshitreddy.me>'
 
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY)
+}
+
 export async function sendTaskReminderEmail(to: string, task: { title: string; due_date: string; priority: string }) {
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `Reminder: ${task.title} is due soon`,
@@ -20,7 +23,7 @@ export async function sendTaskReminderEmail(to: string, task: { title: string; d
 }
 
 export async function sendDailySummaryEmail(to: string, summary: { completed: number; pending: number; overdue: number; name: string }) {
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `Your Daily TaskFlow Summary`,
@@ -48,7 +51,7 @@ export async function sendDailySummaryEmail(to: string, summary: { completed: nu
 }
 
 export async function sendWeeklyReportEmail(to: string, report: { name: string; completionRate: number; totalCompleted: number; streak: number; topProject: string }) {
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `Your Weekly TaskFlow Report`,

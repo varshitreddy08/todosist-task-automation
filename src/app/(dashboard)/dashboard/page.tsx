@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Clock,
   TrendingUp, Calendar, AlertCircle, Plus,
-  BarChart3, Brain, Mail, Loader2, Target,
+  BarChart3, Brain, Mail, Loader2, Target, Flame,
 } from 'lucide-react'
 import type { Task } from '@/types'
 
@@ -76,6 +76,32 @@ export default function DashboardPage() {
         .lte('due_date', todayStr)
       if (error) throw error
       return data ?? []
+    },
+  })
+
+  const { data: streak = 0 } = useQuery({
+    queryKey: ['streak'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('tasks')
+        .select('completed_at')
+        .eq('status', 'completed')
+        .not('completed_at', 'is', null)
+      if (!data?.length) return 0
+
+      const doneDates = new Set(data.map(t => (t.completed_at as string).split('T')[0]))
+
+      let count = 0
+      let check = new Date()
+      // if nothing done today yet, start counting from yesterday
+      if (!doneDates.has(format(check, 'yyyy-MM-dd'))) {
+        check = addDays(check, -1)
+      }
+      while (doneDates.has(format(check, 'yyyy-MM-dd'))) {
+        count++
+        check = addDays(check, -1)
+      }
+      return count
     },
   })
 
@@ -205,8 +231,8 @@ export default function DashboardPage() {
         {[
           { label: "Today's Tasks", value: loadingToday ? '…' : totalCount, icon: CheckCircle2, color: 'text-primary', sub: `${completedCount} completed` },
           { label: 'Completion', value: loadingToday ? '…' : `${completionPct}%`, icon: TrendingUp, color: 'text-emerald-500', sub: "Today's rate" },
-          { label: 'This Week', value: weekAvg > 0 ? `${weekAvg}%` : '—', icon: BarChart3, color: 'text-violet-500', sub: 'Avg completion' },
-          { label: 'Upcoming', value: upcomingTasks.length, icon: Calendar, color: 'text-orange-500', sub: 'Due in 2 weeks' },
+          { label: 'Current Streak', value: streak > 0 ? streak : '—', icon: Flame, color: 'text-orange-500', sub: streak === 1 ? '1 day' : streak > 1 ? `${streak} days` : 'No streak yet' },
+          { label: 'Upcoming', value: upcomingTasks.length, icon: Calendar, color: 'text-violet-500', sub: 'Due in 2 weeks' },
         ].map((stat) => (
           <Card key={stat.label} className="p-4">
             <div className="flex items-start justify-between">
@@ -462,9 +488,9 @@ export default function DashboardPage() {
               <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">
                 Today: {completionPct}%
               </Badge>
-              {upcomingTasks.length > 0 && (
+              {streak > 0 && (
                 <Badge className="text-[10px] bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border-orange-200 dark:border-orange-800">
-                  Upcoming: {upcomingTasks.length}
+                  🔥 {streak} day streak
                 </Badge>
               )}
             </div>

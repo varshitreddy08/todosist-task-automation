@@ -9,12 +9,8 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import {
-  User, Bell, Shield, Palette, Zap, Globe, Mail,
-  Camera, Trash2, Key, CreditCard, Building2, Check, Loader2
-} from 'lucide-react'
+import { User, Bell, Shield, Palette, Camera, Trash2, Check } from 'lucide-react'
 
 const notifSettings = [
   { key: 'task_due', label: 'Task due reminders', desc: 'Get notified when tasks are due soon', default: true },
@@ -25,14 +21,6 @@ const notifSettings = [
   { key: 'ai_suggestions', label: 'AI suggestions', desc: 'AI-powered productivity tips', default: true },
 ]
 
-const integrationList = [
-  { name: 'Google Calendar', desc: 'Sync tasks with Google Calendar', icon: '📅', connected: true },
-  { name: 'Google Drive', desc: 'Attach files from Drive', icon: '📁', connected: false },
-  { name: 'Slack', desc: 'Get task notifications in Slack', icon: '💬', connected: false },
-  { name: 'GitHub', desc: 'Link commits to tasks', icon: '🐙', connected: true },
-  { name: 'Notion', desc: 'Import pages from Notion', icon: '📝', connected: false },
-  { name: 'Zapier', desc: 'Connect to 5000+ apps via Zapier', icon: '⚡', connected: false },
-]
 
 export default function SettingsPage() {
   const [notifs, setNotifs] = useState<Record<string, boolean>>(
@@ -63,24 +51,6 @@ export default function SettingsPage() {
       }
     }
   }
-  const [integrations, setIntegrations] = useState<Record<string, boolean>>(
-    Object.fromEntries(integrationList.map(i => [i.name, i.connected]))
-  )
-  const [loadingIntegration, setLoadingIntegration] = useState<string | null>(null)
-
-  async function toggleIntegration(name: string) {
-    setLoadingIntegration(name)
-    await new Promise(r => setTimeout(r, 1200))
-    const next = !integrations[name]
-    setIntegrations(prev => ({ ...prev, [name]: next }))
-    setLoadingIntegration(null)
-    if (next) {
-      toast.success(`${name} connected successfully`)
-    } else {
-      toast.success(`${name} disconnected`)
-    }
-  }
-
   function saveProfile() {
     toast.success('Profile updated successfully!')
   }
@@ -100,8 +70,6 @@ export default function SettingsPage() {
               { value: 'notifications', label: 'Notifications', icon: Bell },
               { value: 'appearance', label: 'Appearance', icon: Palette },
               { value: 'security', label: 'Security', icon: Shield },
-              { value: 'integrations', label: 'Integrations', icon: Zap },
-              { value: 'billing', label: 'Billing', icon: CreditCard },
             ].map(tab => (
               <TabsTrigger key={tab.value} value={tab.value} className="justify-start gap-2 w-full data-active:bg-background data-active:shadow-sm">
                 <tab.icon className="w-4 h-4" />
@@ -258,80 +226,6 @@ export default function SettingsPage() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="integrations">
-              <Card className="p-6">
-                <h2 className="font-semibold text-lg mb-6">Integrations</h2>
-                <div className="space-y-4">
-                  {integrationList.map(integration => {
-                    const isConnected = integrations[integration.name]
-                    const isLoading = loadingIntegration === integration.name
-                    return (
-                      <div key={integration.name} className="flex items-center justify-between p-4 rounded-xl border hover:bg-accent/20 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{integration.icon}</span>
-                          <div>
-                            <div className="font-medium text-sm">{integration.name}</div>
-                            <div className="text-xs text-muted-foreground">{integration.desc}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isConnected && (
-                            <Badge className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200">
-                              Connected
-                            </Badge>
-                          )}
-                          <Button
-                            variant={isConnected ? 'outline' : 'default'}
-                            size="sm"
-                            disabled={isLoading}
-                            className={isConnected ? '' : 'gradient-primary text-white border-0'}
-                            onClick={() => toggleIntegration(integration.name)}
-                          >
-                            {isLoading ? (
-                              <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />{isConnected ? 'Disconnecting…' : 'Connecting…'}</>
-                            ) : (
-                              isConnected ? 'Disconnect' : 'Connect'
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="billing">
-              <Card className="p-6">
-                <h2 className="font-semibold text-lg mb-2">Billing & Plan</h2>
-                <div className="rounded-xl border bg-primary/5 p-4 mb-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold">Pro Plan</span>
-                        <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px]">Active</Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground">$9/month · Renews Feb 1, 2025</div>
-                    </div>
-                    <div className="text-2xl font-bold text-primary">$9<span className="text-sm text-muted-foreground">/mo</span></div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <h3 className="font-medium text-sm">Plan includes:</h3>
-                  {['Unlimited tasks & projects', 'AI features (Gemini)', 'Advanced analytics', 'Calendar sync', 'Workflow automation', 'Priority support', '10 GB storage'].map(f => (
-                    <div key={f} className="flex items-center gap-2 text-sm">
-                      <Check className="w-4 h-4 text-primary" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <Separator className="my-6" />
-                <div className="flex gap-3">
-                  <Button variant="outline" size="sm">Manage Subscription</Button>
-                  <Button variant="outline" size="sm">View Invoices</Button>
-                </div>
-              </Card>
-            </TabsContent>
           </div>
         </div>
       </Tabs>

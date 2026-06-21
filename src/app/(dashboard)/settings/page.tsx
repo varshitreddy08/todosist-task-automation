@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import { User, Bell, Shield, Palette, Camera, Trash2, Check } from 'lucide-react'
+import { User, Bell, Shield, Palette, Camera, Trash2, Check, Loader2 } from 'lucide-react'
 
 const notifSettings = [
   { key: 'task_due', label: 'Task due reminders', desc: 'Get notified when tasks are due soon', default: true },
@@ -21,17 +21,116 @@ const notifSettings = [
   { key: 'ai_suggestions', label: 'AI suggestions', desc: 'AI-powered productivity tips', default: true },
 ]
 
-
 export default function SettingsPage() {
+  const supabase = createClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Profile state
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState('')
+  const [initials, setInitials] = useState('U')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+
+  // Notifications state
   const [notifs, setNotifs] = useState<Record<string, boolean>>(
     Object.fromEntries(notifSettings.map(n => [n.key, n.default]))
   )
+
+  // Appearance state
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system')
-  const supabase = createClient()
+
+  // Load real user on mount
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const fullName: string = user.user_metadata?.full_name || ''
+      const parts = fullName.split(' ')
+      setFirstName(parts[0] || '')
+      setLastName(parts.slice(1).join(' ') || '')
+      setEmail(user.email || '')
+      setAvatarUrl(user.user_metadata?.avatar_url || '')
+      setInitials((user.email || 'U').slice(0, 2).toUpperCase())
+    }
+    loadUser()
+  }, [])
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File must be under 5MB')
+      return
+    }
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      toast.error('Only JPG, PNG, GIF or WebP allowed')
+      return
+    }
+
+    setUploadingPhoto(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      const ext = file.name.split('.').pop()
+      const path = `${user.id}/avatar.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(path, file, { upsert: true, contentType: file.type })
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(path)
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl },
+      })
+      if (updateError) throw updateError
+
+      // Also update public.users table
+      await supabase.from('users').update({ avatar_url: publicUrl }).eq('id', user.id)
+
+      setAvatarUrl(publicUrl + '?t=' + Date.now())
+      toast.success('Photo updated!')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed'
+      if (msg.includes('Bucket not found') || msg.includes('storage')) {
+        toast.error('Create an "avatars" storage bucket in Supabase first (Storage → New bucket → avatars → Public)')
+      } else {
+        toast.error(msg)
+      }
+    } finally {
+      setUploadingPhoto(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function saveProfile() {
+    setSavingProfile(true)
+    try {
+      const fullName = `${firstName} ${lastName}`.trim()
+      const { error } = await supabase.auth.updateUser({
+        data: { full_name: fullName },
+      })
+      if (error) throw error
+      await supabase.from('users').update({ full_name: fullName }).eq('id', (await supabase.auth.getUser()).data.user!.id)
+      toast.success('Profile saved!')
+    } catch {
+      toast.error('Failed to save profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   async function toggleNotif(key: string, value: boolean) {
     setNotifs(prev => ({ ...prev, [key]: value }))
-
     if (value && (key === 'daily_summary' || key === 'weekly_report')) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user?.email) return
@@ -47,12 +146,9 @@ export default function SettingsPage() {
         if (res.ok) toast.success('Daily summary enabled — test email sent!')
         else toast.success('Daily summary enabled')
       } else {
-        toast.success('Weekly report enabled — you\'ll receive it every Monday')
+        toast.success("Weekly report enabled — you'll receive it every Monday")
       }
     }
-  }
-  function saveProfile() {
-    toast.success('Profile updated successfully!')
   }
 
   return (
@@ -82,43 +178,92 @@ export default function SettingsPage() {
             <TabsContent value="profile">
               <Card className="p-6">
                 <h2 className="font-semibold text-lg mb-6">Profile Information</h2>
+
+                {/* Avatar upload */}
                 <div className="flex items-center gap-4 mb-8">
-                  <Avatar className="h-20 w-20">
-                    <AvatarImage src="" />
-                    <AvatarFallback className="gradient-primary text-white text-2xl font-bold">AJ</AvatarFallback>
-                  </Avatar>
+                  <div className="relative">
+                    <Avatar className="h-20 w-20">
+                      <AvatarImage src={avatarUrl} />
+                      <AvatarFallback className="gradient-primary text-white text-2xl font-bold">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    {uploadingPhoto && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+                        <Loader2 className="w-5 h-5 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
                   <div>
-                    <Button variant="outline" size="sm" className="gap-2 mb-2">
-                      <Camera className="w-3.5 h-3.5" /> Change Photo
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 mb-2"
+                      disabled={uploadingPhoto}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {uploadingPhoto
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Uploading…</>
+                        : <><Camera className="w-3.5 h-3.5" /> Change Photo</>
+                      }
                     </Button>
-                    <p className="text-xs text-muted-foreground">JPG, GIF or PNG. Max 5MB.</p>
+                    <p className="text-xs text-muted-foreground">JPG, PNG, GIF or WebP. Max 5MB.</p>
                   </div>
                 </div>
+
+                {/* Form fields */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="first_name">First Name</Label>
-                    <Input id="first_name" defaultValue="Alex" className="mt-1.5" />
+                    <Input
+                      id="first_name"
+                      className="mt-1.5"
+                      value={firstName}
+                      onChange={e => setFirstName(e.target.value)}
+                      placeholder="First name"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="last_name">Last Name</Label>
-                    <Input id="last_name" defaultValue="Johnson" className="mt-1.5" />
+                    <Input
+                      id="last_name"
+                      className="mt-1.5"
+                      value={lastName}
+                      onChange={e => setLastName(e.target.value)}
+                      placeholder="Last name"
+                    />
                   </div>
                   <div className="col-span-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" defaultValue="alex@example.com" className="mt-1.5" />
-                  </div>
-                  <div className="col-span-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Input id="timezone" defaultValue="America/New_York (UTC-5)" className="mt-1.5" />
-                  </div>
-                  <div className="col-span-2">
-                    <Label htmlFor="bio">Bio</Label>
-                    <Input id="bio" placeholder="Tell us about yourself..." className="mt-1.5" />
+                    <Input
+                      id="email"
+                      type="email"
+                      className="mt-1.5 bg-muted/40"
+                      value={email}
+                      readOnly
+                      title="Email cannot be changed here"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Email is managed through your login provider.</p>
                   </div>
                 </div>
+
                 <div className="mt-6 flex justify-end">
-                  <Button className="gradient-primary text-white border-0" onClick={saveProfile}>
-                    <Check className="w-4 h-4 mr-2" /> Save Changes
+                  <Button
+                    className="gradient-primary text-white border-0"
+                    onClick={saveProfile}
+                    disabled={savingProfile}
+                  >
+                    {savingProfile
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
+                      : <><Check className="w-4 h-4 mr-2" /> Save Changes</>
+                    }
                   </Button>
                 </div>
               </Card>
@@ -225,7 +370,6 @@ export default function SettingsPage() {
                 </div>
               </Card>
             </TabsContent>
-
           </div>
         </div>
       </Tabs>

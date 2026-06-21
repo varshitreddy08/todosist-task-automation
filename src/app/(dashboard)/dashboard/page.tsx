@@ -8,10 +8,12 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/store/useAppStore'
 import { QuickAddTask } from '@/components/tasks/quick-add-task'
+import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Clock, Flame,
   TrendingUp, Calendar, AlertCircle, Sparkles, Plus,
-  ArrowRight, BarChart3, Zap, Brain,
+  ArrowRight, BarChart3, Zap, Brain, Mail, Loader2,
 } from 'lucide-react'
 import type { Task } from '@/types'
 
@@ -80,8 +82,46 @@ const upcomingDeadlines = [
 
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>(mockTasks)
+  const [sendingEmail, setSendingEmail] = useState(false)
   const { setQuickAddOpen } = useAppStore()
   const today = new Date()
+  const supabase = createClient()
+
+  async function sendDailySummary() {
+    setSendingEmail(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.email) { toast.error('No email found'); return }
+
+      const todayStr = format(today, 'yyyy-MM-dd')
+      const { data: allTasks } = await supabase
+        .from('tasks').select('status, due_date').eq('created_by', user.id)
+
+      const completed = (allTasks ?? []).filter(t => t.status === 'completed' && t.due_date === todayStr).length
+      const pending = (allTasks ?? []).filter(t => t.status !== 'completed' && t.due_date === todayStr).length
+      const overdue = (allTasks ?? []).filter(t => t.status !== 'completed' && t.due_date && t.due_date < todayStr).length
+
+      const res = await fetch('/api/email/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: user.email,
+          summary: {
+            name: user.user_metadata?.full_name || user.email,
+            completed,
+            pending,
+            overdue,
+          },
+        }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Daily summary sent to ' + user.email)
+    } catch {
+      toast.error('Failed to send email — check your RESEND_API_KEY')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
 
   const completedCount = tasks.filter(t => t.status === 'completed').length
   const totalCount = tasks.length
@@ -116,13 +156,25 @@ export default function DashboardPage() {
                 : `${completedCount} task${completedCount > 1 ? 's' : ''} done`}
             </p>
           </div>
-          <Button
-            className="gradient-primary text-white border-0 gap-2"
-            onClick={() => setQuickAddOpen(true)}
-          >
-            <Plus className="w-4 h-4" />
-            Add Task
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-xs"
+              onClick={sendDailySummary}
+              disabled={sendingEmail}
+            >
+              {sendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              Daily Summary
+            </Button>
+            <Button
+              className="gradient-primary text-white border-0 gap-2"
+              onClick={() => setQuickAddOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+              Add Task
+            </Button>
+          </div>
         </div>
       </motion.div>
 

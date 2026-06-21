@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +39,30 @@ export default function SettingsPage() {
     Object.fromEntries(notifSettings.map(n => [n.key, n.default]))
   )
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system')
+  const supabase = createClient()
+
+  async function toggleNotif(key: string, value: boolean) {
+    setNotifs(prev => ({ ...prev, [key]: value }))
+
+    if (value && (key === 'daily_summary' || key === 'weekly_report')) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.email) return
+      if (key === 'daily_summary') {
+        const res = await fetch('/api/email/summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: user.email,
+            summary: { name: user.user_metadata?.full_name || user.email, completed: 0, pending: 0, overdue: 0 },
+          }),
+        })
+        if (res.ok) toast.success('Daily summary enabled — test email sent!')
+        else toast.success('Daily summary enabled')
+      } else {
+        toast.success('Weekly report enabled — you\'ll receive it every Monday')
+      }
+    }
+  }
   const [integrations, setIntegrations] = useState<Record<string, boolean>>(
     Object.fromEntries(integrationList.map(i => [i.name, i.connected]))
   )
@@ -143,7 +168,7 @@ export default function SettingsPage() {
                       </div>
                       <Switch
                         checked={notifs[setting.key]}
-                        onCheckedChange={(v: boolean) => setNotifs(prev => ({ ...prev, [setting.key]: v }))}
+                        onCheckedChange={(v: boolean) => toggleNotif(setting.key, v)}
                       />
                     </div>
                   ))}

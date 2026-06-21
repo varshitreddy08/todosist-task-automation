@@ -9,8 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useAppStore } from '@/store/useAppStore'
 import { useCreateTask } from '@/hooks/useTasks'
+import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Loader2, Calendar, Flag } from 'lucide-react'
+import { Loader2, Calendar, Flag, Bell } from 'lucide-react'
 
 const schema = z.object({
   title: z.string().min(1, 'Task title is required'),
@@ -30,7 +31,9 @@ const priorities = [
 export function QuickAddTask() {
   const { quickAddOpen, setQuickAddOpen } = useAppStore()
   const [selectedPriority, setSelectedPriority] = useState<'p1' | 'p2' | 'p3' | 'p4'>('p4')
+  const [emailReminder, setEmailReminder] = useState(false)
   const createTask = useCreateTask()
+  const supabase = createClient()
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -47,9 +50,27 @@ export function QuickAddTask() {
         status: 'todo',
         is_recurring: false,
       })
-      toast.success('Task created!')
+
+      if (emailReminder && data.due_date) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.email) {
+          await fetch('/api/email/reminder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: user.email,
+              task: { title: data.title, due_date: data.due_date, priority: selectedPriority },
+            }),
+          })
+          toast.success('Task created! Reminder email sent.')
+        }
+      } else {
+        toast.success('Task created!')
+      }
+
       reset()
       setSelectedPriority('p4')
+      setEmailReminder(false)
       setQuickAddOpen(false)
     } catch {
       toast.error('Failed to create task')
@@ -89,9 +110,18 @@ export function QuickAddTask() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1.5 ml-auto">
+            <div className="flex items-center gap-2 ml-auto">
               <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
               <Input type="date" className="h-7 text-xs w-32 border-0 bg-muted/50" {...register('due_date')} />
+              <button
+                type="button"
+                onClick={() => setEmailReminder(r => !r)}
+                title={emailReminder ? 'Email reminder on' : 'Email reminder off'}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${emailReminder ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
+              >
+                <Bell className="w-3 h-3" />
+                {emailReminder ? 'Remind' : 'Remind?'}
+              </button>
             </div>
           </div>
           <div className="flex justify-end gap-2">

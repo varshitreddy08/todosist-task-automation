@@ -7,16 +7,11 @@ const supabase = createClient()
 
 export function useTasks(projectId?: string | null) {
   return useQuery({
-    queryKey: ['tasks', projectId],
+    queryKey: ['tasks', projectId ?? 'inbox'],
     queryFn: async () => {
       let query = supabase
         .from('tasks')
-        .select(`
-          *,
-          labels:task_labels(label:labels(*)),
-          subtasks:tasks!parent_id(*),
-          assignee:users!assigned_to(*)
-        `)
+        .select('*, assignee:users!assigned_to(*)')
         .order('position', { ascending: true })
 
       if (projectId) {
@@ -27,7 +22,7 @@ export function useTasks(projectId?: string | null) {
 
       const { data, error } = await query
       if (error) throw error
-      return data as Task[]
+      return (data ?? []) as Task[]
     },
   })
 }
@@ -39,13 +34,12 @@ export function useTodayTasks() {
       const today = new Date().toISOString().split('T')[0]
       const { data, error } = await supabase
         .from('tasks')
-        .select('*, labels:task_labels(label:labels(*))')
+        .select('*')
         .lte('due_date', today)
         .neq('status', 'completed')
         .order('priority', { ascending: true })
-
       if (error) throw error
-      return data as Task[]
+      return (data ?? []) as Task[]
     },
   })
 }
@@ -54,16 +48,21 @@ export function useCreateTask() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (task: Partial<Task>) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
       const { data, error } = await supabase
         .from('tasks')
-        .insert(task)
+        .insert({ ...task, created_by: user.id })
         .select()
         .single()
       if (error) throw error
-      return data
+      return data as Task
     },
-    onSuccess: () => {
+    onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      if (task.project_id) {
+        queryClient.invalidateQueries({ queryKey: ['projects', task.project_id] })
+      }
     },
   })
 }
@@ -79,10 +78,13 @@ export function useUpdateTask() {
         .select()
         .single()
       if (error) throw error
-      return data
+      return data as Task
     },
-    onSuccess: () => {
+    onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      if (task.project_id) {
+        queryClient.invalidateQueries({ queryKey: ['projects', task.project_id] })
+      }
     },
   })
 }

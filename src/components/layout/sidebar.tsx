@@ -14,6 +14,7 @@ import {
   Settings, Bell, Users, Inbox, Star, ChevronDown, Plus,
   Target, Heart, Clock, Zap, ChevronRight, X, CheckCircle2
 } from 'lucide-react'
+import { useProjects } from '@/hooks/useProjects'
 import type { User } from '@supabase/supabase-js'
 
 const navItems = [
@@ -30,13 +31,6 @@ const productivityItems = [
   { href: '/focus', label: 'Focus Mode', icon: Clock },
 ]
 
-const mockProjects = [
-  { id: '1', name: 'Design Sprint', color: '#6366f1', progress: 65 },
-  { id: '2', name: 'Q4 Planning', color: '#22c55e', progress: 30 },
-  { id: '3', name: 'Research Project', color: '#f59e0b', progress: 80 },
-  { id: '4', name: 'Personal', color: '#ec4899', progress: 45 },
-]
-
 interface SidebarProps {
   user: User
 }
@@ -44,6 +38,7 @@ interface SidebarProps {
 export function DashboardSidebar({ user }: SidebarProps) {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useAppStore()
+  const { data: projects = [] } = useProjects()
 
   const initials = (user.email || 'U').slice(0, 2).toUpperCase()
 
@@ -135,7 +130,7 @@ export function DashboardSidebar({ user }: SidebarProps) {
                   </Button>
                 </div>
                 <nav className="space-y-0.5">
-                  {mockProjects.map((project) => (
+                  {projects.slice(0, 6).map((project) => (
                     <Link
                       key={project.id}
                       href={`/projects/${project.id}`}
@@ -146,10 +141,10 @@ export function DashboardSidebar({ user }: SidebarProps) {
                           : 'text-sidebar-foreground hover:bg-sidebar-accent'
                       )}
                     >
-                      <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: project.color }} />
+                      <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: project.color || '#6366f1' }} />
                       <span className="flex-1 truncate">{project.name}</span>
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="text-[10px] text-muted-foreground">{project.progress}%</div>
+                      <div className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                        {project.progress ?? 0}%
                       </div>
                     </Link>
                   ))}

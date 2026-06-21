@@ -11,10 +11,10 @@ export function useProjects() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('*, task_count:tasks(count), completed_count:tasks(count)')
+        .select('*')
         .order('created_at', { ascending: false })
       if (error) throw error
-      return data as Project[]
+      return (data ?? []) as Project[]
     },
   })
 }
@@ -39,13 +39,15 @@ export function useCreateProject() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (project: Partial<Project>) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
       const { data, error } = await supabase
         .from('projects')
-        .insert(project)
+        .insert({ ...project, created_by: user.id, progress: 0 })
         .select()
         .single()
       if (error) throw error
-      return data
+      return data as Project
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
@@ -64,7 +66,21 @@ export function useUpdateProject() {
         .select()
         .single()
       if (error) throw error
-      return data
+      return data as Project
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', vars.id] })
+    },
+  })
+}
+
+export function useDeleteProject() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('projects').delete().eq('id', id)
+      if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })

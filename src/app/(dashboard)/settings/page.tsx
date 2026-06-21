@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   User, Bell, Shield, Palette, Zap, Globe, Mail,
-  Camera, Trash2, Key, CreditCard, Building2, Check
+  Camera, Trash2, Key, CreditCard, Building2, Check, Loader2
 } from 'lucide-react'
 
 const notifSettings = [
@@ -24,11 +24,37 @@ const notifSettings = [
   { key: 'ai_suggestions', label: 'AI suggestions', desc: 'AI-powered productivity tips', default: true },
 ]
 
+const integrationList = [
+  { name: 'Google Calendar', desc: 'Sync tasks with Google Calendar', icon: '📅', connected: true },
+  { name: 'Google Drive', desc: 'Attach files from Drive', icon: '📁', connected: false },
+  { name: 'Slack', desc: 'Get task notifications in Slack', icon: '💬', connected: false },
+  { name: 'GitHub', desc: 'Link commits to tasks', icon: '🐙', connected: true },
+  { name: 'Notion', desc: 'Import pages from Notion', icon: '📝', connected: false },
+  { name: 'Zapier', desc: 'Connect to 5000+ apps via Zapier', icon: '⚡', connected: false },
+]
+
 export default function SettingsPage() {
   const [notifs, setNotifs] = useState<Record<string, boolean>>(
     Object.fromEntries(notifSettings.map(n => [n.key, n.default]))
   )
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system')
+  const [integrations, setIntegrations] = useState<Record<string, boolean>>(
+    Object.fromEntries(integrationList.map(i => [i.name, i.connected]))
+  )
+  const [loadingIntegration, setLoadingIntegration] = useState<string | null>(null)
+
+  async function toggleIntegration(name: string) {
+    setLoadingIntegration(name)
+    await new Promise(r => setTimeout(r, 1200))
+    const next = !integrations[name]
+    setIntegrations(prev => ({ ...prev, [name]: next }))
+    setLoadingIntegration(null)
+    if (next) {
+      toast.success(`${name} connected successfully`)
+    } else {
+      toast.success(`${name} disconnected`)
+    }
+  }
 
   function saveProfile() {
     toast.success('Profile updated successfully!')
@@ -211,30 +237,41 @@ export default function SettingsPage() {
               <Card className="p-6">
                 <h2 className="font-semibold text-lg mb-6">Integrations</h2>
                 <div className="space-y-4">
-                  {[
-                    { name: 'Google Calendar', desc: 'Sync tasks with Google Calendar', icon: '📅', connected: true },
-                    { name: 'Google Drive', desc: 'Attach files from Drive', icon: '📁', connected: false },
-                    { name: 'Slack', desc: 'Get task notifications in Slack', icon: '💬', connected: false },
-                    { name: 'GitHub', desc: 'Link commits to tasks', icon: '🐙', connected: true },
-                    { name: 'Notion', desc: 'Import pages from Notion', icon: '📝', connected: false },
-                    { name: 'Zapier', desc: 'Connect to 5000+ apps via Zapier', icon: '⚡', connected: false },
-                  ].map(integration => (
-                    <div key={integration.name} className="flex items-center justify-between p-4 rounded-xl border hover:bg-accent/20 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{integration.icon}</span>
-                        <div>
-                          <div className="font-medium text-sm">{integration.name}</div>
-                          <div className="text-xs text-muted-foreground">{integration.desc}</div>
+                  {integrationList.map(integration => {
+                    const isConnected = integrations[integration.name]
+                    const isLoading = loadingIntegration === integration.name
+                    return (
+                      <div key={integration.name} className="flex items-center justify-between p-4 rounded-xl border hover:bg-accent/20 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{integration.icon}</span>
+                          <div>
+                            <div className="font-medium text-sm">{integration.name}</div>
+                            <div className="text-xs text-muted-foreground">{integration.desc}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isConnected && (
+                            <Badge className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200">
+                              Connected
+                            </Badge>
+                          )}
+                          <Button
+                            variant={isConnected ? 'outline' : 'default'}
+                            size="sm"
+                            disabled={isLoading}
+                            className={isConnected ? '' : 'gradient-primary text-white border-0'}
+                            onClick={() => toggleIntegration(integration.name)}
+                          >
+                            {isLoading ? (
+                              <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />{isConnected ? 'Disconnecting…' : 'Connecting…'}</>
+                            ) : (
+                              isConnected ? 'Disconnect' : 'Connect'
+                            )}
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {integration.connected && <Badge className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200">Connected</Badge>}
-                        <Button variant={integration.connected ? 'outline' : 'default'} size="sm" className={integration.connected ? '' : 'gradient-primary text-white border-0'}>
-                          {integration.connected ? 'Disconnect' : 'Connect'}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </Card>
             </TabsContent>

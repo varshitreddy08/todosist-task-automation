@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm show *)",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const v=JSON.parse\\(d\\); console.log\\('Latest:', v[v.length-1]\\); console.log\\('V5:', v.filter\\(x=>x.startsWith\\('5'\\)\\).slice\\(-5\\).join\\(', '\\)\\)\")",
+      "Bash(npm uninstall *)",
+      "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\lib\\\\supabase\\\\client.ts\" -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\lib\\\\supabase\\\\server.ts\" -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\lib\\\\supabase\\\\middleware.ts\" -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\app\\\\auth\\\\callback\\\\route.ts\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Output \"Done\")"
+    ]
+  }
+}

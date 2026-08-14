@@ -13,25 +13,29 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAppStore } from '@/store/useAppStore'
-import { createClient } from '@/lib/supabase/client'
+import { signOut } from 'next-auth/react'
 import { toast } from 'sonner'
 import { Menu, Search, Bell, Sun, Moon, Settings, LogOut, User, HelpCircle, Plus } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import type { User as SupabaseUser } from '@supabase/supabase-js'
 
-export function DashboardHeader({ user }: { user: SupabaseUser }) {
+interface AppUser {
+  id: string
+  name: string | null
+  email: string | null
+  image: string | null
+}
+
+export function DashboardHeader({ user }: { user: AppUser }) {
   const { sidebarOpen, setSidebarOpen, setQuickAddOpen } = useAppStore()
   const { theme, setTheme } = useTheme()
   const router = useRouter()
-  const supabase = createClient()
 
   const initials = (user.email || 'U').slice(0, 2).toUpperCase()
 
-  async function signOut() {
-    await supabase.auth.signOut()
+  async function handleSignOut() {
+    await signOut({ redirect: false })
     toast.success('Signed out')
     router.push('/login')
-    router.refresh()
   }
 
   return (
@@ -72,7 +76,7 @@ export function DashboardHeader({ user }: { user: SupabaseUser }) {
         <DropdownMenu>
           <DropdownMenuTrigger className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <Avatar className="h-7 w-7 cursor-pointer">
-              <AvatarImage src={user.user_metadata?.avatar_url} />
+              <AvatarImage src={user.image ?? undefined} />
               <AvatarFallback className="gradient-primary text-white text-xs">{initials}</AvatarFallback>
             </Avatar>
           </DropdownMenuTrigger>
@@ -80,7 +84,7 @@ export function DashboardHeader({ user }: { user: SupabaseUser }) {
             <DropdownMenuGroup>
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{user.user_metadata?.full_name || 'User'}</p>
+                  <p className="text-sm font-medium">{user.name || 'User'}</p>
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
               </DropdownMenuLabel>
@@ -96,7 +100,7 @@ export function DashboardHeader({ user }: { user: SupabaseUser }) {
               <HelpCircle className="w-4 h-4 mr-2" />Help
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut} variant="destructive">
+            <DropdownMenuItem onClick={handleSignOut} variant="destructive">
               <LogOut className="w-4 h-4 mr-2" />Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>

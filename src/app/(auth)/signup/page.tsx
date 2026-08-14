@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { createClient } from '@/lib/supabase/client'
+import { signIn } from 'next-auth/react'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Loader2, Globe, CheckCircle2 } from 'lucide-react'
 
@@ -38,46 +38,43 @@ export default function SignupPage() {
 
   async function onSubmit(data: SignupForm) {
     setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-      options: { data: { full_name: data.full_name } },
-    })
-    setLoading(false)
-    if (error) {
-      toast.error(error.message)
-    } else {
-      toast.success('Account created! Redirecting...')
-      router.push('/dashboard')
-      router.refresh()
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.email, password: data.password, full_name: data.full_name }),
+      })
+      const body = await res.json()
+      if (!res.ok) {
+        toast.error(body.error || 'Failed to create account')
+        return
+      }
+      const result = await signIn('credentials', {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+      })
+      if (result?.error) {
+        toast.error('Account created but sign-in failed. Please log in.')
+        router.push('/login')
+      } else {
+        toast.success('Account created! Welcome to TaskFlow!')
+        router.push('/dashboard')
+        router.refresh()
+      }
+    } finally {
+      setLoading(false)
     }
   }
 
   async function signUpWithGoogle() {
     setGoogleLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
-    if (error) {
-      toast.error(error.message)
-      setGoogleLoading(false)
-    }
+    await signIn('google', { callbackUrl: '/dashboard' })
   }
 
   async function signUpWithGithub() {
     setGithubLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
-    if (error) {
-      toast.error(error.message)
-      setGithubLoading(false)
-    }
+    await signIn('github', { callbackUrl: '/dashboard' })
   }
 
   return (

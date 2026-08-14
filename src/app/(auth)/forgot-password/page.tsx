@@ -1,58 +1,11 @@
 'use client'
-import { useState } from 'react'
 import Link from 'next/link'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { createClient } from '@/lib/supabase/client'
-import { toast } from 'sonner'
-import { Loader2, ArrowLeft, Mail } from 'lucide-react'
-
-const schema = z.object({ email: z.string().email('Invalid email address') })
-type FormData = z.infer<typeof schema>
+import { signIn } from 'next-auth/react'
+import { ArrowLeft, Globe } from 'lucide-react'
 
 export default function ForgotPasswordPage() {
-  const [loading, setLoading] = useState(false)
-  const [sent, setSent] = useState(false)
-
-  const { register, handleSubmit, getValues, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  })
-
-  async function onSubmit(data: FormData) {
-    setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    })
-    setLoading(false)
-    if (error) {
-      toast.error(error.message)
-    } else {
-      setSent(true)
-    }
-  }
-
-  if (sent) {
-    return (
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
-        <div className="w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-6">
-          <Mail className="w-8 h-8 text-white" />
-        </div>
-        <h2 className="text-2xl font-bold mb-3">Check your email</h2>
-        <p className="text-muted-foreground mb-2">We sent a password reset link to</p>
-        <p className="font-medium text-primary mb-8">{getValues('email')}</p>
-        <p className="text-sm text-muted-foreground mb-6">Didn't receive it? Check your spam folder or try again.</p>
-        <Button variant="outline" onClick={() => setSent(false)} className="mr-3">Try again</Button>
-        <Link href="/login" className="inline-flex items-center justify-center gap-1.5 rounded-lg h-8 px-2.5 text-sm font-medium gradient-primary text-white border-0">Back to sign in</Link>
-      </motion.div>
-    )
-  }
-
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
       <Link href="/login" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors">
@@ -60,19 +13,21 @@ export default function ForgotPasswordPage() {
       </Link>
       <div className="mb-8">
         <h2 className="text-3xl font-bold mb-2">Reset password</h2>
-        <p className="text-muted-foreground">Enter your email and we'll send you a reset link</p>
+        <p className="text-muted-foreground">Sign in with Google or GitHub to access your account without a password.</p>
       </div>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <Label htmlFor="email">Email address</Label>
-          <Input id="email" type="email" placeholder="you@example.com" className="mt-1.5 h-11" {...register('email')} />
-          {errors.email && <p className="text-xs text-destructive mt-1">{errors.email.message}</p>}
-        </div>
-        <Button type="submit" className="w-full h-11 gradient-primary text-white border-0 mt-2" disabled={loading}>
-          {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          Send reset link
+      <div className="space-y-3">
+        <Button className="w-full h-11" variant="outline" onClick={() => signIn('google', { callbackUrl: '/dashboard' })}>
+          <Globe className="w-4 h-4 mr-2" /> Continue with Google
         </Button>
-      </form>
+        <Button className="w-full h-11" variant="outline" onClick={() => signIn('github', { callbackUrl: '/dashboard' })}>
+          <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.929.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+          Continue with GitHub
+        </Button>
+      </div>
+      <p className="text-center text-sm text-muted-foreground mt-8">
+        Remembered your password?{' '}
+        <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link>
+      </p>
     </motion.div>
   )
 }

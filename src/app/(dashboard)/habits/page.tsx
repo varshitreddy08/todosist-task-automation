@@ -8,11 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Plus, Flame, CheckCircle2, Circle, Loader2, Heart, Trash2 } from 'lucide-react'
-
-const supabase = createClient()
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6']
 
@@ -31,6 +28,12 @@ interface HabitCompletion {
   completed_date: string
 }
 
+async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export default function HabitsPage() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -41,34 +44,22 @@ export default function HabitsPage() {
 
   const { data: habits = [], isLoading } = useQuery({
     queryKey: ['habits'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('habits').select('*').order('created_at', { ascending: true })
-      if (error) throw error
-      return (data ?? []) as Habit[]
-    },
+    queryFn: () => apiFetch<Habit[]>('/api/habits'),
   })
 
   const { data: completions = [] } = useQuery({
     queryKey: ['habit-completions', today],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('habit_completions')
-        .select('habit_id, completed_date')
-        .eq('completed_date', today)
-      if (error) throw error
-      return (data ?? []) as HabitCompletion[]
-    },
+    queryFn: () => apiFetch<HabitCompletion[]>(`/api/habit-completions?date=${today}`),
   })
 
   const completedToday = new Set(completions.map(c => c.habit_id))
 
   const createHabit = useMutation({
-    mutationFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-      const { error } = await supabase.from('habits').insert({ name: name.trim(), description: desc.trim() || null, color, user_id: user.id, streak: 0 })
-      if (error) throw error
-    },
+    mutationFn: () => apiFetch('/api/habits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), description: desc.trim() || null, color }),
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['habits'] })
       toast.success('Habit created!')
@@ -79,14 +70,13 @@ export default function HabitsPage() {
 
   const toggleHabit = useMutation({
     mutationFn: async (habitId: string) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const habit = habits.find(h => h.id === habitId)
       if (completedToday.has(habitId)) {
-        await supabase.from('habit_completions').delete().eq('habit_id', habitId).eq('completed_date', today)
-        await supabase.from('habits').update({ streak: Math.max(0, (habits.find(h => h.id === habitId)?.streak ?? 1) - 1) }).eq('id', habitId)
+        await apiFetch(`/api/habit-completions?habitId=${habitId}&date=${today}`, { method: 'DELETE' })
+        await apiFetch(`/api/habits/${habitId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ streak: Math.max(0, (habit?.streak ?? 1) - 1) }) })
       } else {
-        await supabase.from('habit_completions').insert({ habit_id: habitId, user_id: user.id, completed_date: today })
-        await supabase.from('habits').update({ streak: (habits.find(h => h.id === habitId)?.streak ?? 0) + 1 }).eq('id', habitId)
+        await apiFetch('/api/habit-completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ habit_id: habitId, completed_date: today }) })
+        await apiFetch(`/api/habits/${habitId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ streak: (habit?.streak ?? 0) + 1 }) })
       }
     },
     onSuccess: () => {
@@ -96,10 +86,7 @@ export default function HabitsPage() {
   })
 
   const deleteHabit = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('habits').delete().eq('id', id)
-      if (error) throw error
-    },
+    mutationFn: (id: string) => apiFetch(`/api/habits/${id}`, { method: 'DELETE' }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['habits'] }); toast.success('Habit deleted') },
   })
 
@@ -110,9 +97,7 @@ export default function HabitsPage() {
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Habits</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {isLoading ? 'Loading…' : `${completedCount} of ${habits.length} completed today`}
-          </p>
+          <p className="text-muted-foreground text-sm mt-1">{isLoading ? 'Loading…' : `${completedCount} of ${habits.length} completed today`}</p>
         </div>
         <Button className="gradient-primary text-white border-0 gap-2" onClick={() => setOpen(true)}>
           <Plus className="w-4 h-4" /> New Habit
@@ -126,30 +111,18 @@ export default function HabitsPage() {
             <span className="text-sm font-bold text-primary">{habits.length > 0 ? Math.round((completedCount / habits.length) * 100) : 0}%</span>
           </div>
           <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <motion.div
-              className="h-full rounded-full gradient-primary"
-              initial={{ width: 0 }}
-              animate={{ width: `${habits.length > 0 ? (completedCount / habits.length) * 100 : 0}%` }}
-              transition={{ duration: 0.5 }}
-            />
+            <motion.div className="h-full rounded-full gradient-primary" initial={{ width: 0 }} animate={{ width: `${habits.length > 0 ? (completedCount / habits.length) * 100 : 0}%` }} transition={{ duration: 0.5 }} />
           </div>
         </Card>
       )}
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
+        <div className="flex items-center justify-center py-24"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
       ) : habits.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
           <Heart className="w-12 h-12" />
-          <div className="text-center">
-            <p className="font-medium text-foreground">No habits yet</p>
-            <p className="text-sm mt-1">Start building positive habits today</p>
-          </div>
-          <Button className="gradient-primary text-white border-0 gap-2 mt-2" onClick={() => setOpen(true)}>
-            <Plus className="w-4 h-4" /> Create First Habit
-          </Button>
+          <div className="text-center"><p className="font-medium text-foreground">No habits yet</p><p className="text-sm mt-1">Start building positive habits today</p></div>
+          <Button className="gradient-primary text-white border-0 gap-2 mt-2" onClick={() => setOpen(true)}><Plus className="w-4 h-4" /> Create First Habit</Button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -160,10 +133,7 @@ export default function HabitsPage() {
                 <Card className={`p-4 transition-all group ${done ? 'opacity-80' : ''}`}>
                   <div className="flex items-center gap-4">
                     <button onClick={() => toggleHabit.mutate(habit.id)} className="flex-shrink-0">
-                      {done
-                        ? <CheckCircle2 className="w-6 h-6 text-primary" />
-                        : <Circle className="w-6 h-6 text-muted-foreground/40 hover:text-primary transition-colors" />
-                      }
+                      {done ? <CheckCircle2 className="w-6 h-6 text-primary" /> : <Circle className="w-6 h-6 text-muted-foreground/40 hover:text-primary transition-colors" />}
                     </button>
                     <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: habit.color }} />
                     <div className="flex-1 min-w-0">
@@ -171,15 +141,8 @@ export default function HabitsPage() {
                       {habit.description && <p className="text-xs text-muted-foreground mt-0.5">{habit.description}</p>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="gap-1 text-xs">
-                        <Flame className="w-3 h-3 text-orange-500" />{habit.streak}
-                      </Badge>
-                      <button
-                        onClick={() => deleteHabit.mutate(habit.id)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <Badge variant="secondary" className="gap-1 text-xs"><Flame className="w-3 h-3 text-orange-500" />{habit.streak}</Badge>
+                      <button onClick={() => deleteHabit.mutate(habit.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                 </Card>
@@ -193,30 +156,17 @@ export default function HabitsPage() {
         <DialogContent className="max-w-sm">
           <DialogTitle>New Habit</DialogTitle>
           <form onSubmit={e => { e.preventDefault(); createHabit.mutate() }} className="space-y-4 mt-2">
-            <div>
-              <Label>Name</Label>
-              <Input className="mt-1.5" placeholder="e.g. Morning run" value={name} onChange={e => setName(e.target.value)} required />
-            </div>
-            <div>
-              <Label>Description (optional)</Label>
-              <Input className="mt-1.5" placeholder="Why this habit?" value={desc} onChange={e => setDesc(e.target.value)} />
-            </div>
+            <div><Label>Name</Label><Input className="mt-1.5" placeholder="e.g. Morning run" value={name} onChange={e => setName(e.target.value)} required /></div>
+            <div><Label>Description (optional)</Label><Input className="mt-1.5" placeholder="Why this habit?" value={desc} onChange={e => setDesc(e.target.value)} /></div>
             <div>
               <Label>Color</Label>
               <div className="flex gap-2 mt-1.5">
-                {COLORS.map(c => (
-                  <button key={c} type="button" onClick={() => setColor(c)}
-                    className={`w-7 h-7 rounded-full transition-all ${color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-105'}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
+                {COLORS.map(c => <button key={c} type="button" onClick={() => setColor(c)} className={`w-7 h-7 rounded-full transition-all ${color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-105'}`} style={{ backgroundColor: c }} />)}
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" className="gradient-primary text-white border-0" disabled={createHabit.isPending || !name.trim()}>
-                {createHabit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
-              </Button>
+              <Button type="submit" className="gradient-primary text-white border-0" disabled={createHabit.isPending || !name.trim()}>{createHabit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}</Button>
             </div>
           </form>
         </DialogContent>

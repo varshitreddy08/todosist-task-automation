@@ -4,31 +4,24 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
-import { createClient } from '@/lib/supabase/client'
+import { signOut } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import { LogOut, Settings, User, Mail, ArrowLeft } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import type { User as SupabaseUser } from '@supabase/supabase-js'
 
 export default function ProfilePage() {
   const router = useRouter()
-  const supabase = createClient()
-  const [user, setUser] = useState<SupabaseUser | null>(null)
+  const { data: session } = useSession()
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user))
-  }, [supabase])
-
-  async function signOut() {
-    await supabase.auth.signOut()
+  async function handleSignOut() {
+    await signOut({ redirect: false })
     toast.success('Signed out successfully')
     router.push('/login')
-    router.refresh()
   }
 
-  const initials = (user?.email || 'U').slice(0, 2).toUpperCase()
-  const fullName = user?.user_metadata?.full_name || 'User'
-  const email = user?.email || ''
+  const initials = (session?.user?.email || 'U').slice(0, 2).toUpperCase()
+  const fullName = session?.user?.name || 'User'
+  const email = session?.user?.email || ''
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
@@ -45,10 +38,8 @@ export default function ProfilePage() {
       <Card className="p-6">
         <div className="flex items-center gap-5 mb-6">
           <Avatar className="h-20 w-20">
-            <AvatarImage src={user?.user_metadata?.avatar_url} />
-            <AvatarFallback className="gradient-primary text-white text-2xl font-bold">
-              {initials}
-            </AvatarFallback>
+            <AvatarImage src={session?.user?.image ?? undefined} />
+            <AvatarFallback className="gradient-primary text-white text-2xl font-bold">{initials}</AvatarFallback>
           </Avatar>
           <div>
             <h2 className="text-xl font-semibold">{fullName}</h2>
@@ -75,16 +66,10 @@ export default function ProfilePage() {
 
         <div className="flex flex-col gap-3">
           <Button variant="outline" className="justify-start gap-2" onClick={() => router.push('/settings')}>
-            <Settings className="w-4 h-4" />
-            Account Settings
+            <Settings className="w-4 h-4" />Account Settings
           </Button>
-          <Button
-            variant="destructive"
-            className="justify-start gap-2"
-            onClick={signOut}
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out
+          <Button variant="destructive" className="justify-start gap-2" onClick={handleSignOut}>
+            <LogOut className="w-4 h-4" />Sign Out
           </Button>
         </div>
       </Card>

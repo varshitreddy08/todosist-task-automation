@@ -10,8 +10,6 @@ import { Badge } from '@/components/ui/badge'
 import { useProject, useUpdateProject } from '@/hooks/useProjects'
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from '@/hooks/useTasks'
 import { useWorkspace } from '@/hooks/useWorkspace'
-import { useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Plus, Loader2, CheckCircle2, Circle, Star, Trash2,
@@ -29,8 +27,6 @@ const priorityConfig = {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const queryClient = useQueryClient()
-  const supabase = createClient()
   const workspaceId = useWorkspace()
 
   const { data: project, isLoading: projectLoading } = useProject(id)
@@ -53,26 +49,6 @@ export default function ProjectDetailPage() {
     if (!project || project.progress === progress) return
     updateProject.mutate({ id, progress })
   }, [progress, project?.progress])
-
-  // Real-time subscription
-  useEffect(() => {
-    const channel = supabase
-      .channel(`project-${id}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'tasks',
-        filter: `project_id=eq.${id}`,
-      }, () => {
-        queryClient.invalidateQueries({ queryKey: ['tasks', id] })
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'projects',
-        filter: `id=eq.${id}`,
-      }, () => {
-        queryClient.invalidateQueries({ queryKey: ['projects', id] })
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [id, queryClient, supabase])
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault()

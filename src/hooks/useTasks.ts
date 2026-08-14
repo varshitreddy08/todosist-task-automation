@@ -1,28 +1,19 @@
 'use client'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 import type { Task } from '@/types'
 
-const supabase = createClient()
+async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
 
 export function useTasks(projectId?: string | null) {
   return useQuery({
     queryKey: ['tasks', projectId ?? 'inbox'],
-    queryFn: async () => {
-      let query = supabase
-        .from('tasks')
-        .select('*, assignee:users!assigned_to(*)')
-        .order('position', { ascending: true })
-
-      if (projectId) {
-        query = query.eq('project_id', projectId)
-      } else {
-        query = query.is('project_id', null)
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-      return (data ?? []) as Task[]
+    queryFn: () => {
+      const url = projectId ? `/api/tasks?projectId=${projectId}` : '/api/tasks'
+      return apiFetch<Task[]>(url)
     },
   })
 }
@@ -30,34 +21,19 @@ export function useTasks(projectId?: string | null) {
 export function useTodayTasks() {
   return useQuery({
     queryKey: ['tasks', 'today'],
-    queryFn: async () => {
-      const today = new Date().toISOString().split('T')[0]
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .lte('due_date', today)
-        .neq('status', 'completed')
-        .order('priority', { ascending: true })
-      if (error) throw error
-      return (data ?? []) as Task[]
-    },
+    queryFn: () => apiFetch<Task[]>('/api/tasks?filter=today'),
   })
 }
 
 export function useCreateTask() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (task: Partial<Task>) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert({ ...task, created_by: user.id })
-        .select()
-        .single()
-      if (error) throw error
-      return data as Task
-    },
+    mutationFn: (task: Partial<Task>) =>
+      apiFetch<Task>('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(task),
+      }),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       if (task.project_id) {
@@ -70,16 +46,12 @@ export function useCreateTask() {
 export function useUpdateTask() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...updates }: Partial<Task> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single()
-      if (error) throw error
-      return data as Task
-    },
+    mutationFn: ({ id, ...updates }: Partial<Task> & { id: string }) =>
+      apiFetch<Task>(`/api/tasks/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      }),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       if (task.project_id) {
@@ -92,10 +64,8 @@ export function useUpdateTask() {
 export function useDeleteTask() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('tasks').delete().eq('id', id)
-      if (error) throw error
-    },
+    mutationFn: (id: string) =>
+      apiFetch(`/api/tasks/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
     },

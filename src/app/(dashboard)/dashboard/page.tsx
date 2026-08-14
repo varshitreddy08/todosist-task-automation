@@ -10,7 +10,7 @@ import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/store/useAppStore'
 import { QuickAddTask } from '@/components/tasks/quick-add-task'
 import { useUpdateTask } from '@/hooks/useTasks'
-import { createClient } from '@/lib/supabase/client'
+import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Clock,
@@ -26,81 +26,48 @@ const priorityConfig = {
   p4: { label: 'P4', color: 'text-muted-foreground', bg: 'bg-muted' },
 }
 
-const supabase = createClient()
+async function apiFetch<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
 
 export default function DashboardPage() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const { setQuickAddOpen } = useAppStore()
+  const { data: session } = useSession()
   const today = new Date()
   const todayStr = format(today, 'yyyy-MM-dd')
   const updateTask = useUpdateTask()
 
   const { data: todayTasks = [], isLoading: loadingToday } = useQuery({
     queryKey: ['tasks', 'dashboard-today', todayStr],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('due_date', todayStr)
-        .order('priority', { ascending: true })
-      if (error) throw error
-      return (data ?? []) as Task[]
-    },
+    queryFn: () => apiFetch<Task[]>(`/api/tasks?filter=today`),
   })
 
   const { data: upcomingTasks = [] } = useQuery({
     queryKey: ['tasks', 'upcoming', todayStr],
-    queryFn: async () => {
-      const twoWeeks = format(addDays(today, 14), 'yyyy-MM-dd')
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .gt('due_date', todayStr)
-        .lte('due_date', twoWeeks)
-        .neq('status', 'completed')
-        .order('due_date', { ascending: true })
-        .limit(5)
-      if (error) throw error
-      return (data ?? []) as Task[]
-    },
+    queryFn: () => apiFetch<Task[]>('/api/tasks?filter=upcoming-limit'),
   })
 
   const { data: weekRaw = [] } = useQuery({
     queryKey: ['tasks', 'week-chart', todayStr],
-    queryFn: async () => {
+    queryFn: () => {
       const weekStart = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd')
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('due_date, status')
-        .gte('due_date', weekStart)
-        .lte('due_date', todayStr)
-      if (error) throw error
-      return data ?? []
+      return apiFetch<{ due_date: string | null; status: string }[]>(`/api/tasks?filter=week&weekStart=${weekStart}`)
     },
   })
 
   const { data: streak = 0 } = useQuery({
     queryKey: ['streak'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('tasks')
-        .select('completed_at')
-        .eq('status', 'completed')
-        .not('completed_at', 'is', null)
-      if (!data?.length) return 0
-
-      const doneDates = new Set(data.map(t => (t.completed_at as string).split('T')[0]))
-
+      const data = await apiFetch<{ completed_at: string | null }[]>('/api/tasks?filter=streak')
+      if (!data.length) return 0
+      const doneDates = new Set(data.filter(t => t.completed_at).map(t => (t.completed_at as string).split('T')[0]))
       let count = 0
       let check = new Date()
-      // if nothing done today yet, start counting from yesterday
-      if (!doneDates.has(format(check, 'yyyy-MM-dd'))) {
-        check = addDays(check, -1)
-      }
-      while (doneDates.has(format(check, 'yyyy-MM-dd'))) {
-        count++
-        check = addDays(check, -1)
-      }
+      if (!doneDates.has(format(check, 'yyyy-MM-dd'))) check = addDays(check, -1)
+      while (doneDates.has(format(check, 'yyyy-MM-dd'))) { count++; check = addDays(check, -1) }
       return count
     },
   })
@@ -115,11 +82,7 @@ export default function DashboardPage() {
     const dayTasks = weekRaw.filter(t => t.due_date === dayStr)
     const total = dayTasks.length
     const done = dayTasks.filter(t => t.status === 'completed').length
-    return {
-      label,
-      pct: total > 0 ? Math.round((done / total) * 100) : 0,
-      isFuture: dayStr > todayStr,
-    }
+    return { label, pct: total > 0 ? Math.round((done / total) * 100) : 0, isFuture: dayStr > todayStr }
   })
   const filledDays = weekChartData.filter(d => !d.isFuture && d.pct > 0)
   const weekAvg = filledDays.length > 0
@@ -156,26 +119,24 @@ export default function DashboardPage() {
   async function sendDailySummary() {
     setSendingEmail(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user?.email) { toast.error('No email found'); return }
+      const email = session?.user?.email
+      if (!email) { toast.error('No email found'); return }
 
-      const { data: allTasks } = await supabase
-        .from('tasks').select('status, due_date').eq('created_by', user.id)
-
-      const completed = (allTasks ?? []).filter(t => t.status === 'completed' && t.due_date === todayStr).length
-      const pending = (allTasks ?? []).filter(t => t.status !== 'completed' && t.due_date === todayStr).length
-      const overdue = (allTasks ?? []).filter(t => t.status !== 'completed' && t.due_date && t.due_date < todayStr).length
+      const allTasks = await apiFetch<{ status: string; due_date: string | null }[]>('/api/tasks?filter=created_by')
+      const completed = allTasks.filter(t => t.status === 'completed' && t.due_date === todayStr).length
+      const pending = allTasks.filter(t => t.status !== 'completed' && t.due_date === todayStr).length
+      const overdue = allTasks.filter(t => t.status !== 'completed' && t.due_date && t.due_date < todayStr).length
 
       const res = await fetch('/api/email/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: user.email,
-          summary: { name: user.user_metadata?.full_name || user.email, completed, pending, overdue },
+          to: email,
+          summary: { name: session?.user?.name || email, completed, pending, overdue },
         }),
       })
       if (!res.ok) throw new Error()
-      toast.success('Daily summary sent to ' + user.email)
+      toast.success('Daily summary sent to ' + email)
     } catch {
       toast.error('Failed to send email — check your RESEND_API_KEY')
     } finally {
@@ -194,40 +155,22 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-bold">{greeting}! 👋</h1>
             <p className="text-muted-foreground mt-1">
               {format(today, 'EEEE, MMMM d')} ·{' '}
-              {totalCount === 0
-                ? "No tasks today — add one!"
-                : completedCount === 0
-                ? `${totalCount} task${totalCount > 1 ? 's' : ''} to do`
-                : `${completedCount} of ${totalCount} done`}
+              {totalCount === 0 ? "No tasks today — add one!" : completedCount === 0 ? `${totalCount} task${totalCount > 1 ? 's' : ''} to do` : `${completedCount} of ${totalCount} done`}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 text-xs"
-              onClick={sendDailySummary}
-              disabled={sendingEmail}
-            >
+            <Button variant="outline" size="sm" className="gap-2 text-xs" onClick={sendDailySummary} disabled={sendingEmail}>
               {sendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
               Daily Summary
             </Button>
-            <Button
-              className="gradient-primary text-white border-0 gap-2"
-              onClick={() => setQuickAddOpen(true)}
-            >
+            <Button className="gradient-primary text-white border-0 gap-2" onClick={() => setQuickAddOpen(true)}>
               <Plus className="w-4 h-4" /> Add Task
             </Button>
           </div>
         </div>
       </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
-      >
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Today's Tasks", value: loadingToday ? '…' : totalCount, icon: CheckCircle2, color: 'text-primary', sub: `${completedCount} completed` },
           { label: 'Completion', value: loadingToday ? '…' : `${completionPct}%`, icon: TrendingUp, color: 'text-emerald-500', sub: "Today's rate" },
@@ -250,13 +193,7 @@ export default function DashboardPage() {
       </motion.div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <motion.div
-          initial={{ opacity: 0, x: -10 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
-          className="lg:col-span-2 space-y-4"
-        >
-          {/* Today's Tasks */}
+        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="lg:col-span-2 space-y-4">
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -283,62 +220,33 @@ export default function DashboardPage() {
                 {todayTasks.map((task, i) => {
                   const p = priorityConfig[task.priority as keyof typeof priorityConfig] ?? priorityConfig.p4
                   return (
-                    <motion.div
-                      key={task.id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
+                    <motion.div key={task.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
                       className={`flex items-center gap-3 p-3 rounded-lg border hover:bg-accent/30 transition-colors group cursor-pointer ${task.status === 'completed' ? 'opacity-60' : ''}`}
                       onClick={() => toggleTask(task.id, task.status)}
                     >
-                      <button
-                        className="flex-shrink-0"
-                        onClick={e => { e.stopPropagation(); toggleTask(task.id, task.status) }}
-                      >
-                        {task.status === 'completed'
-                          ? <CheckCircle2 className="w-5 h-5 text-primary" />
-                          : <Circle className="w-5 h-5 text-muted-foreground/40 group-hover:text-primary transition-colors" />
-                        }
+                      <button className="flex-shrink-0" onClick={e => { e.stopPropagation(); toggleTask(task.id, task.status) }}>
+                        {task.status === 'completed' ? <CheckCircle2 className="w-5 h-5 text-primary" /> : <Circle className="w-5 h-5 text-muted-foreground/40 group-hover:text-primary transition-colors" />}
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>
-                          {task.title}
-                        </p>
-                        {task.due_time && (
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <Clock className="w-3 h-3" /> {task.due_time}
-                          </p>
-                        )}
+                        <p className={`text-sm font-medium truncate ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>{task.title}</p>
+                        {task.due_time && <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><Clock className="w-3 h-3" /> {task.due_time}</p>}
                       </div>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${p.bg} ${p.color}`}>
-                        {p.label}
-                      </span>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${p.bg} ${p.color}`}>{p.label}</span>
                     </motion.div>
                   )
                 })}
               </div>
             )}
-
-            <button
-              onClick={() => setQuickAddOpen(true)}
-              className="w-full flex items-center gap-2 p-3 mt-2 rounded-lg border-dashed border-2 border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm text-muted-foreground hover:text-primary"
-            >
+            <button onClick={() => setQuickAddOpen(true)} className="w-full flex items-center gap-2 p-3 mt-2 rounded-lg border-dashed border-2 border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm text-muted-foreground hover:text-primary">
               <Plus className="w-4 h-4" /> Add a task
             </button>
           </Card>
 
-          {/* Upcoming Deadlines */}
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-orange-500" />
-                Upcoming Deadlines
-              </h2>
-              {upcomingTasks.length > 0 && (
-                <Badge variant="secondary" className="text-xs">{upcomingTasks.length} upcoming</Badge>
-              )}
+              <h2 className="font-semibold flex items-center gap-2"><AlertCircle className="w-4 h-4 text-orange-500" />Upcoming Deadlines</h2>
+              {upcomingTasks.length > 0 && <Badge variant="secondary" className="text-xs">{upcomingTasks.length} upcoming</Badge>}
             </div>
-
             {upcomingTasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground">
                 <Calendar className="w-8 h-8 opacity-20" />
@@ -355,16 +263,10 @@ export default function DashboardPage() {
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${urgent ? 'bg-red-500' : 'bg-orange-400'}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{task.title}</p>
-                        {task.due_date && (
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(task.due_date + 'T00:00:00'), 'MMM d')}
-                          </p>
-                        )}
+                        {task.due_date && <p className="text-xs text-muted-foreground">{format(new Date(task.due_date + 'T00:00:00'), 'MMM d')}</p>}
                       </div>
                       <div className="text-right">
-                        <p className={`text-xs font-medium ${urgent ? 'text-red-500' : 'text-orange-500'}`}>
-                          {dueLabel(days)}
-                        </p>
+                        <p className={`text-xs font-medium ${urgent ? 'text-red-500' : 'text-orange-500'}`}>{dueLabel(days)}</p>
                         <span className={`text-[10px] ${p.color}`}>{p.label}</span>
                       </div>
                     </div>
@@ -375,31 +277,16 @@ export default function DashboardPage() {
           </Card>
         </motion.div>
 
-        {/* Right column */}
-        <motion.div
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="space-y-4"
-        >
-          {/* Today's Plan */}
+        <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="space-y-4">
           <Card className="p-5">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-7 h-7 rounded-lg gradient-primary flex items-center justify-center">
-                <Brain className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm">Today&apos;s Plan</h3>
-                <p className="text-xs text-muted-foreground">Pending tasks</p>
-              </div>
+              <div className="w-7 h-7 rounded-lg gradient-primary flex items-center justify-center"><Brain className="w-4 h-4 text-white" /></div>
+              <div><h3 className="font-semibold text-sm">Today&apos;s Plan</h3><p className="text-xs text-muted-foreground">Pending tasks</p></div>
             </div>
-
             {pendingTasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground">
                 <CheckCircle2 className="w-8 h-8 opacity-30 text-primary" />
-                <p className="text-sm">
-                  {totalCount === 0 ? 'No tasks yet' : 'All done for today!'}
-                </p>
+                <p className="text-sm">{totalCount === 0 ? 'No tasks yet' : 'All done for today!'}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -407,92 +294,49 @@ export default function DashboardPage() {
                   <div key={i} className="flex items-start gap-3">
                     <div className="text-xs text-muted-foreground w-16 flex-shrink-0 pt-0.5">{item.time}</div>
                     <div className="flex-1">
-                      <div className={`rounded-lg px-3 py-2 text-xs ${
-                        item.type === 'deep'
-                          ? 'bg-primary/10 text-primary'
-                          : item.type === 'medium'
-                          ? 'bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400'
-                          : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'
-                      }`}>
+                      <div className={`rounded-lg px-3 py-2 text-xs ${item.type === 'deep' ? 'bg-primary/10 text-primary' : item.type === 'medium' ? 'bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400'}`}>
                         <p className="font-medium truncate">{item.title}</p>
                         <p className="opacity-70 mt-0.5">{item.duration} min</p>
                       </div>
                     </div>
                   </div>
                 ))}
-                {pendingTasks.length > 4 && (
-                  <p className="text-xs text-muted-foreground text-center">+{pendingTasks.length - 4} more</p>
-                )}
+                {pendingTasks.length > 4 && <p className="text-xs text-muted-foreground text-center">+{pendingTasks.length - 4} more</p>}
               </div>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full mt-4 text-xs gap-1"
-              onClick={() => setQuickAddOpen(true)}
-            >
+            <Button variant="outline" size="sm" className="w-full mt-4 text-xs gap-1" onClick={() => setQuickAddOpen(true)}>
               <Plus className="w-3 h-3" /> Add Task
             </Button>
           </Card>
 
-          {/* This Week chart */}
           <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <BarChart3 className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-sm">This Week</h3>
-            </div>
+            <div className="flex items-center gap-2 mb-4"><BarChart3 className="w-5 h-5 text-primary" /><h3 className="font-semibold text-sm">This Week</h3></div>
             <div className="flex items-end gap-1 h-20 mb-3">
               {weekChartData.map((d, i) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <div
-                    className={`w-full rounded-sm transition-all ${
-                      d.isFuture ? 'bg-muted/20' : d.pct > 0 ? 'bg-primary/70' : 'bg-muted/40'
-                    }`}
-                    style={{ height: d.isFuture ? '4px' : `${Math.max(d.pct, 4)}%` }}
-                  />
+                  <div className={`w-full rounded-sm transition-all ${d.isFuture ? 'bg-muted/20' : d.pct > 0 ? 'bg-primary/70' : 'bg-muted/40'}`} style={{ height: d.isFuture ? '4px' : `${Math.max(d.pct, 4)}%` }} />
                   <span className="text-[9px] text-muted-foreground">{d.label}</span>
                 </div>
               ))}
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Weekly avg</span>
-              <span className={`font-semibold ${weekAvg > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
-                {weekAvg > 0 ? `${weekAvg}%` : '—'}
-              </span>
+              <span className={`font-semibold ${weekAvg > 0 ? 'text-primary' : 'text-muted-foreground'}`}>{weekAvg > 0 ? `${weekAvg}%` : '—'}</span>
             </div>
           </Card>
 
-          {/* Progress card */}
           <Card className="p-5 bg-primary/5 border-primary/20">
-            <div className="flex items-center gap-2 mb-3">
-              <Target className="w-4 h-4 text-primary" />
-              <h3 className="font-semibold text-sm text-primary">Progress</h3>
-            </div>
+            <div className="flex items-center gap-2 mb-3"><Target className="w-4 h-4 text-primary" /><h3 className="font-semibold text-sm text-primary">Progress</h3></div>
             {totalCount === 0 ? (
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Add your first task to start tracking your progress today.
-              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed">Add your first task to start tracking your progress today.</p>
             ) : completionPct === 100 ? (
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">All tasks done!</strong> Excellent work today.
-              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed"><strong className="text-foreground">All tasks done!</strong> Excellent work today.</p>
             ) : (
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                You&apos;ve completed{' '}
-                <strong className="text-foreground">{completedCount} of {totalCount}</strong>{' '}
-                tasks today. {completionPct >= 50 ? 'Keep going!' : 'You got this!'}
-              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed">You&apos;ve completed <strong className="text-foreground">{completedCount} of {totalCount}</strong> tasks today. {completionPct >= 50 ? 'Keep going!' : 'You got this!'}</p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
-              <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">
-                Today: {completionPct}%
-              </Badge>
-              {streak > 0 && (
-                <Badge className="text-[10px] bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border-orange-200 dark:border-orange-800">
-                  🔥 {streak} day streak
-                </Badge>
-              )}
+              <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">Today: {completionPct}%</Badge>
+              {streak > 0 && <Badge className="text-[10px] bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border-orange-200 dark:border-orange-800">🔥 {streak} day streak</Badge>}
             </div>
           </Card>
         </motion.div>

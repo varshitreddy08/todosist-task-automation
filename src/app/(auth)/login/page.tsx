@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { createClient } from '@/lib/supabase/client'
+import { signIn } from 'next-auth/react'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Loader2, Globe } from 'lucide-react'
 
@@ -33,11 +33,14 @@ export default function LoginPage() {
 
   async function onSubmit(data: LoginForm) {
     setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email: data.email, password: data.password })
+    const result = await signIn('credentials', {
+      email: data.email,
+      password: data.password,
+      redirect: false,
+    })
     setLoading(false)
-    if (error) {
-      toast.error(error.message)
+    if (result?.error) {
+      toast.error('Invalid email or password')
     } else {
       toast.success('Welcome back!')
       router.push('/dashboard')
@@ -47,28 +50,12 @@ export default function LoginPage() {
 
   async function signInWithGoogle() {
     setGoogleLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
-    if (error) {
-      toast.error(error.message)
-      setGoogleLoading(false)
-    }
+    await signIn('google', { callbackUrl: '/dashboard' })
   }
 
   async function signInWithGithub() {
     setGithubLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    })
-    if (error) {
-      toast.error(error.message)
-      setGithubLoading(false)
-    }
+    await signIn('github', { callbackUrl: '/dashboard' })
   }
 
   return (

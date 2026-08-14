@@ -11,11 +11,17 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard, CheckSquare, FolderOpen, Calendar, BarChart3,
-  Settings, Bell, Users, Inbox, Star, ChevronDown, Plus,
-  Target, Heart, Clock, Zap, ChevronRight, X, CheckCircle2
+  Settings, Inbox, Plus,
+  Target, Heart, Clock, X, CheckCircle2
 } from 'lucide-react'
 import { useProjects } from '@/hooks/useProjects'
-import type { User } from '@supabase/supabase-js'
+
+interface AppUser {
+  id: string
+  name: string | null
+  email: string | null
+  image: string | null
+}
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -31,11 +37,7 @@ const productivityItems = [
   { href: '/focus', label: 'Focus Mode', icon: Clock },
 ]
 
-interface SidebarProps {
-  user: User
-}
-
-export function DashboardSidebar({ user }: SidebarProps) {
+export function DashboardSidebar({ user }: { user: AppUser }) {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useAppStore()
   const { data: projects = [] } = useProjects()
@@ -44,7 +46,6 @@ export function DashboardSidebar({ user }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile overlay */}
       <AnimatePresence>
         {sidebarOpen && (
           <motion.div
@@ -57,7 +58,6 @@ export function DashboardSidebar({ user }: SidebarProps) {
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
       <motion.aside
         initial={false}
         animate={{ width: sidebarOpen ? 256 : 0, opacity: sidebarOpen ? 1 : 0 }}
@@ -70,7 +70,6 @@ export function DashboardSidebar({ user }: SidebarProps) {
         style={{ width: sidebarOpen ? 256 : 0 }}
       >
         <div className="flex flex-col h-full w-64">
-          {/* Logo */}
           <div className="flex items-center justify-between px-4 h-14 border-b flex-shrink-0">
             <Link href="/dashboard" className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg gradient-primary flex items-center justify-center">
@@ -85,7 +84,6 @@ export function DashboardSidebar({ user }: SidebarProps) {
 
           <ScrollArea className="flex-1">
             <div className="p-3 space-y-6">
-              {/* Main nav */}
               <div>
                 <Button
                   className="w-full justify-start gap-2 h-9 gradient-primary text-white border-0 mb-3"
@@ -121,7 +119,6 @@ export function DashboardSidebar({ user }: SidebarProps) {
 
               <Separator />
 
-              {/* Projects */}
               <div>
                 <div className="flex items-center justify-between px-3 mb-2">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Projects</span>
@@ -157,7 +154,6 @@ export function DashboardSidebar({ user }: SidebarProps) {
 
               <Separator />
 
-              {/* Productivity */}
               <div>
                 <div className="px-3 mb-2">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Productivity</span>
@@ -183,15 +179,14 @@ export function DashboardSidebar({ user }: SidebarProps) {
             </div>
           </ScrollArea>
 
-          {/* Bottom user section */}
           <div className="border-t p-3 flex-shrink-0">
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8 flex-shrink-0">
-                <AvatarImage src={user.user_metadata?.avatar_url} />
+                <AvatarImage src={user.image ?? undefined} />
                 <AvatarFallback className="gradient-primary text-white text-xs">{initials}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate">{user.user_metadata?.full_name || user.email}</div>
+                <div className="text-sm font-medium truncate">{user.name || user.email}</div>
                 <div className="text-xs text-muted-foreground truncate">{user.email}</div>
               </div>
               <Link href="/settings">

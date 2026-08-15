@@ -29,6 +29,11 @@ app.add_middleware(
 scheduler = AsyncIOScheduler()
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def verify_api_key(x_api_key: str = Header(...)):

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useSession, signIn } from 'next-auth/react'
+import { useSession, signIn, signOut } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -244,6 +244,9 @@ export default function IntegrationsPage() {
               <CheckCircle2 className="w-4 h-4" /> Gmail connected as <span className="font-medium">{session?.user?.email}</span>
             </div>
             <p className="text-xs text-muted-foreground">AI-scheduled emails will send directly from your Gmail inbox.</p>
+            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => signOut({ callbackUrl: '/settings/integrations' })}>
+              <X className="w-3.5 h-3.5 mr-1.5" /> Disconnect Gmail
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">

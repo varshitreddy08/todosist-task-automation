@@ -10,7 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import { User, Bell, Shield, Palette, Check, Loader2, Trash2 } from 'lucide-react'
+import { User, Bell, Shield, Palette, Check, Loader2, Trash2, Plug } from 'lucide-react'
+import Link from 'next/link'
 
 const notifSettings = [
   { key: 'task_due', label: 'Task due reminders', desc: 'Get notified when tasks are due soon', default: true },
@@ -97,6 +98,9 @@ export default function SettingsPage() {
                 <tab.icon className="w-4 h-4" />{tab.label}
               </TabsTrigger>
             ))}
+            <Link href="/settings/integrations" className="flex items-center gap-2 w-full px-3 py-1.5 text-sm rounded-md hover:bg-background transition-colors text-muted-foreground hover:text-foreground">
+              <Plug className="w-4 h-4" /> Integrations
+            </Link>
           </TabsList>
 
           <div className="flex-1">

@@ -4,7 +4,6 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { useAppStore } from '@/store/useAppStore'
-import { QuickAddTask } from '@/components/tasks/quick-add-task'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Plus, Clock, Loader2 } from 'lucide-react'
@@ -162,7 +161,6 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <QuickAddTask />
     </div>
   )
 }

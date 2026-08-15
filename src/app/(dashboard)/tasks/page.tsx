@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Card } from '@/components/ui/card'
 import { useAppStore } from '@/store/useAppStore'
-import { QuickAddTask } from '@/components/tasks/quick-add-task'
 import {
   CheckCircle2, Circle, Search, Filter, LayoutList, Columns3,
   Calendar, Plus, MoreHorizontal, Trash2, Edit, Clock, Flag
@@ -214,7 +213,6 @@ export default function TasksPage() {
         </TabsContent>
       </Tabs>
 
-      <QuickAddTask />
     </div>
   )
 }

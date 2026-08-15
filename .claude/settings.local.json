@@ -9,7 +9,15 @@
       "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\lib\\\\supabase\\\\server.ts\" -ErrorAction SilentlyContinue)",
       "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\lib\\\\supabase\\\\middleware.ts\" -ErrorAction SilentlyContinue)",
       "Bash(Remove-Item -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\\\\src\\\\app\\\\auth\\\\callback\\\\route.ts\" -ErrorAction SilentlyContinue)",
-      "Bash(Write-Output \"Done\")"
+      "Bash(Write-Output \"Done\")",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Varshit's Workspace\\\\UID\\\\taskflow\" -Recurse -Directory | Select-Object -First 40 | ForEach-Object { $_.FullName })",
+      "Bash(xargs grep -l \"email\\\\|Email\")",
+      "Bash(npx drizzle-kit *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(node create-icons.js)",
+      "PowerShell(Get-Random *)",
+      "Bash(git add *)"
     ]
   }
 }

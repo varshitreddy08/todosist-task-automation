@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { db } from '@/db'
 import { tasks } from '@/db/schema'
-import { eq, and, isNull, lte, gte, gt, ne } from 'drizzle-orm'
+import { eq, and, isNull, lte, gte, gt, ne, ilike } from 'drizzle-orm'
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -16,7 +16,13 @@ export async function GET(req: NextRequest) {
   try {
     let rows
 
-    if (filter === 'today') {
+    if (url.searchParams.get('q')) {
+      const q = url.searchParams.get('q')!
+      const limit = parseInt(url.searchParams.get('limit') ?? '8')
+      rows = await db.select().from(tasks)
+        .where(and(eq(tasks.created_by, userId), ilike(tasks.title, `%${q}%`)))
+        .limit(limit)
+    } else if (filter === 'today') {
       const today = new Date().toISOString().split('T')[0]
       rows = await db.select().from(tasks)
         .where(and(eq(tasks.created_by, userId), eq(tasks.due_date, today)))

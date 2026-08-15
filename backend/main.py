@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import asyncio
 from dotenv import load_dotenv
@@ -87,13 +87,16 @@ async def process_due_automations():
     from database import SessionLocal
     db = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         pending = db.query(Automation).filter(
             Automation.status == "pending",
-            Automation.scheduled_at <= now,
         ).all()
+        # Filter in Python to avoid naive/aware comparison issues
+        due = [item for item in pending if item.scheduled_at is not None and (
+            item.scheduled_at.replace(tzinfo=timezone.utc) if item.scheduled_at.tzinfo is None else item.scheduled_at
+        ) <= now]
 
-        for item in pending:
+        for item in due:
             try:
                 if item.type == "whatsapp":
                     await send_whatsapp_message(item.to_phone, item.wa_message)
@@ -102,11 +105,14 @@ async def process_due_automations():
                     subject = item.email_subject
                     body = item.email_body
 
-                    # If AI hasn't drafted yet (prompt present, body empty), draft now
+                    # recipient_name is stored in wa_message field for email type
+                    recipient = item.wa_message or item.to_email
+
+                    # If AI hasn't drafted yet, draft now
                     if item.ai_prompt and not body:
                         draft = await draft_with_ai(
                             prompt=item.ai_prompt,
-                            recipient=item.recipient_name or item.to_email,
+                            recipient=recipient,
                             sender_name=os.getenv("SMTP_FROM_NAME", "Varshit"),
                         )
                         subject = draft["subject"]
@@ -117,7 +123,8 @@ async def process_due_automations():
                     await send_smtp_email(item.to_email, subject, body)
 
                 item.status = "sent"
-                item.sent_at = datetime.utcnow()
+                item.sent_at = datetime.now(timezone.utc)
+                print(f"[Automation] Sent {item.type} for user {item.user_id}: {item.id}")
 
             except Exception as e:
                 item.status = "failed"

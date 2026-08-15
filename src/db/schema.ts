@@ -190,6 +190,27 @@ export const notifications = pgTable('notifications', {
   created_at: timestamp('created_at').defaultNow(),
 })
 
+export const whatsapp_busy_mode = pgTable('whatsapp_busy_mode', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  active: boolean('active').notNull().default(false),
+  message: text('message').notNull().default(''),
+  ai_mode: boolean('ai_mode').notNull().default(false),
+  context: text('context').notNull().default(''), // e.g. "I am in exam"
+  contacts: text('contacts').notNull().default('all'), // 'all' or JSON array of phone numbers
+  expires_at: timestamp('expires_at'),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+})
+
+export const class_schedule = pgTable('class_schedule', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  entries: text('entries').notNull().default('[]'), // JSON: [{day,subject,start_time,end_time,type}]
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+})
+
 export const scheduled_emails = pgTable('scheduled_emails', {
   id: uuid('id').primaryKey().defaultRandom(),
   user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

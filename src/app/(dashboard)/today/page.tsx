@@ -6,7 +6,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/store/useAppStore'
-import { QuickAddTask } from '@/components/tasks/quick-add-task'
 import { CheckCircle2, Circle, Plus, Clock, Flame, Brain, Sparkles, Loader2 } from 'lucide-react'
 import type { Task, Priority } from '@/types'
 
@@ -163,7 +162,6 @@ export default function TodayPage() {
         </p>
       </div>
 
-      <QuickAddTask />
     </div>
   )
 }

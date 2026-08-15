@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/store/useAppStore'
-import { QuickAddTask } from '@/components/tasks/quick-add-task'
 import { useUpdateTask } from '@/hooks/useTasks'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
@@ -120,10 +119,10 @@ export default function DashboardPage() {
     setSendingEmail(true)
     try {
       const email = session?.user?.email
-      if (!email) { toast.error('No email found'); return }
+      if (!email) { toast.error('No email found in your session'); return }
 
-      const allTasks = await apiFetch<{ status: string; due_date: string | null }[]>('/api/tasks?filter=created_by')
-      const completed = allTasks.filter(t => t.status === 'completed' && t.due_date === todayStr).length
+      const allTasks = await apiFetch<{ status: string; due_date: string | null; completed_at: string | null }[]>('/api/tasks?filter=created_by')
+      const completed = allTasks.filter(t => t.status === 'completed' && t.completed_at?.startsWith(todayStr)).length
       const pending = allTasks.filter(t => t.status !== 'completed' && t.due_date === todayStr).length
       const overdue = allTasks.filter(t => t.status !== 'completed' && t.due_date && t.due_date < todayStr).length
 
@@ -135,10 +134,11 @@ export default function DashboardPage() {
           summary: { name: session?.user?.name || email, completed, pending, overdue },
         }),
       })
-      if (!res.ok) throw new Error()
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Send failed')
       toast.success('Daily summary sent to ' + email)
-    } catch {
-      toast.error('Failed to send email — check your RESEND_API_KEY')
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to send email')
     } finally {
       setSendingEmail(false)
     }
@@ -342,7 +342,6 @@ export default function DashboardPage() {
         </motion.div>
       </div>
 
-      <QuickAddTask />
     </div>
   )
 }

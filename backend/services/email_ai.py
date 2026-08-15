@@ -2,8 +2,6 @@ import httpx
 import os
 import json
 import re
-import aiosmtplib
-from email.message import EmailMessage
 
 
 async def draft_with_ai(prompt: str, recipient: str, sender_name: str, tone: str = "professional") -> dict:
@@ -49,24 +47,27 @@ async def draft_with_ai(prompt: str, recipient: str, sender_name: str, tone: str
 
 
 async def send_smtp_email(to: str, subject: str, body: str) -> None:
-    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER", "")
-    password = os.getenv("SMTP_PASS", "")
-    from_name = os.getenv("SMTP_FROM_NAME", "TaskFlow")
-    from_addr = f"{from_name} <{user}>"
+    """Send email via Resend API."""
+    api_key = os.getenv("RESEND_API_KEY", "")
+    if not api_key:
+        raise ValueError("RESEND_API_KEY is not set in environment variables")
 
-    msg = EmailMessage()
-    msg["From"] = from_addr
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(body)
+    from_email = os.getenv("FROM_EMAIL", "TaskFlow <noreply@varshitreddy.me>")
+    html_body = "<br>".join(body.splitlines())
 
-    await aiosmtplib.send(
-        msg,
-        hostname=host,
-        port=port,
-        start_tls=True,
-        username=user,
-        password=password,
-    )
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": from_email,
+                "to": [to],
+                "subject": subject,
+                "html": f"<div style='font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;line-height:1.6'>{html_body}</div>",
+            },
+        )
+        if not resp.is_success:
+            raise ValueError(f"Resend error {resp.status_code}: {resp.text}")

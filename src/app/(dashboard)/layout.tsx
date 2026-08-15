@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/auth'
 import { DashboardSidebar } from '@/components/layout/sidebar'
 import { DashboardHeader } from '@/components/layout/header'
+import { CommandPalette } from '@/components/layout/command-palette'
+import { QuickAddTask } from '@/components/tasks/quick-add-task'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -23,6 +25,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </main>
       </div>
+      <CommandPalette />
+      <QuickAddTask />
     </div>
   )
 }

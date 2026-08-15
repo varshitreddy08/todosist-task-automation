@@ -45,16 +45,16 @@ export function DashboardHeader({ user }: { user: AppUser }) {
       </Button>
 
       <div className="flex-1 max-w-md">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search tasks, projects..."
-            className="pl-9 h-8 bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm"
-          />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground bg-background border rounded px-1.5 py-0.5">
-            <span>⌘</span><span>K</span>
+        <button
+          onClick={() => (window as any).__openCommandPalette?.()}
+          className="w-full flex items-center gap-2.5 h-8 px-3 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left"
+        >
+          <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <span className="flex-1 text-sm text-muted-foreground">Search tasks, projects...</span>
+          <kbd className="hidden sm:flex items-center gap-0.5 text-[10px] text-muted-foreground bg-background border rounded px-1.5 py-0.5 flex-shrink-0">
+            ⌘K
           </kbd>
-        </div>
+        </button>
       </div>
 
       <div className="flex items-center gap-1 ml-auto">

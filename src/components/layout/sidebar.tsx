@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/useAppStore'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -15,6 +16,7 @@ import {
   Target, Heart, Clock, X, CheckCircle2, Zap, BookOpen, Plug
 } from 'lucide-react'
 import { useProjects } from '@/hooks/useProjects'
+import type { Task } from '@/types'
 
 interface AppUser {
   id: string
@@ -22,13 +24,6 @@ interface AppUser {
   email: string | null
   image: string | null
 }
-
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/inbox', label: 'Inbox', icon: Inbox, badge: '3' },
-  { href: '/today', label: 'Today', icon: CheckSquare, badge: '5' },
-  { href: '/upcoming', label: 'Upcoming', icon: Calendar },
-]
 
 const productivityItems = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -44,6 +39,29 @@ export function DashboardSidebar({ user }: { user: AppUser }) {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useAppStore()
   const { data: projects = [] } = useProjects()
+
+  const today = new Date().toISOString().split('T')[0]
+
+  const { data: inboxTasks = [] } = useQuery<Task[]>({
+    queryKey: ['tasks', 'inbox'],
+    queryFn: () => fetch('/api/tasks').then(r => r.ok ? r.json() : []),
+    staleTime: 60000,
+  })
+  const { data: todayTasks = [] } = useQuery<Task[]>({
+    queryKey: ['tasks', 'today'],
+    queryFn: () => fetch('/api/tasks?filter=today').then(r => r.ok ? r.json() : []),
+    staleTime: 60000,
+  })
+
+  const inboxCount = inboxTasks.filter(t => t.status !== 'completed' && !t.project_id).length
+  const todayCount = todayTasks.filter(t => t.status !== 'completed').length
+
+  const navItems = [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/inbox',    label: 'Inbox',    icon: Inbox,       count: inboxCount },
+    { href: '/today',    label: 'Today',    icon: CheckSquare, count: todayCount },
+    { href: '/upcoming', label: 'Upcoming', icon: Calendar },
+  ]
 
   const initials = (user.email || 'U').slice(0, 2).toUpperCase()
 
@@ -110,9 +128,9 @@ export function DashboardSidebar({ user }: { user: AppUser }) {
                     >
                       <item.icon className="w-4 h-4 flex-shrink-0" />
                       <span className="flex-1">{item.label}</span>
-                      {item.badge && (
+                      {'count' in item && item.count > 0 && (
                         <Badge variant="secondary" className="h-5 text-[10px] px-1.5 bg-primary/10 text-primary border-0">
-                          {item.badge}
+                          {item.count}
                         </Badge>
                       )}
                     </Link>

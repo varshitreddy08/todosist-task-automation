@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import {
   MessageSquare, Mail, Key, Plus, Trash2, Copy, CheckCircle2,
-  Loader2, RefreshCw, X, ExternalLink, Wifi, WifiOff, Shield, Puzzle, Download, Chrome
+  Loader2, RefreshCw, X, ExternalLink, Wifi, WifiOff, Shield, Puzzle, Download
 } from 'lucide-react'
 
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {

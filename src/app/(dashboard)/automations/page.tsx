@@ -12,7 +12,7 @@ import { format } from 'date-fns'
 import {
   MessageSquare, Brain, Zap, Plus, X, Loader2, Eye,
   Clock, CheckCircle2, XCircle, Trash2, Send, ChevronRight,
-  Phone, Mail, Lightbulb, Smile, Briefcase, Heart, AlertCircle
+  Phone, Mail, Lightbulb, Smile, Briefcase, Heart, AlertCircle, Sparkles
 } from 'lucide-react'
 
 type Automation = {
@@ -64,6 +64,7 @@ export default function AutomationsPage() {
 
   const [waForm, setWaForm] = useState({ to_phone: '', message: '', scheduled_at: '' })
   const [emailForm, setEmailForm] = useState({ to_email: '', recipient_name: '', ai_prompt: '', tone: 'professional', scheduled_at: '' })
+  const [fixingText, setFixingText] = useState(false)
 
   const { data: automations = [], isLoading } = useQuery({
     queryKey: ['automations'],
@@ -213,7 +214,27 @@ export default function AutomationsPage() {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-sm font-medium">Message</label>
-                    <span className={`text-xs ${waChars > 1000 ? 'text-red-500' : 'text-muted-foreground'}`}>{waChars}/1000</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!waForm.message.trim()) return
+                          setFixingText(true)
+                          try {
+                            const res = await fetch('/api/ai/fix-text', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: waForm.message, type: 'message' }) })
+                            const { fixed } = await res.json()
+                            setWaForm(f => ({ ...f, message: fixed }))
+                            toast.success('AI fixed your message!')
+                          } catch { toast.error('AI fix failed') }
+                          setFixingText(false)
+                        }}
+                        disabled={!waForm.message.trim() || fixingText}
+                        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 disabled:opacity-40 transition-colors font-medium"
+                      >
+                        {fixingText ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        Fix with AI
+                      </button>
+                      <span className={`text-xs ${waChars > 1000 ? 'text-red-500' : 'text-muted-foreground'}`}>{waChars}/1000</span>
+                    </div>
                   </div>
                   <Textarea
                     placeholder="Type your message here..."
@@ -222,6 +243,7 @@ export default function AutomationsPage() {
                     onChange={e => setWaForm(f => ({ ...f, message: e.target.value.slice(0, 1000) }))}
                     className="resize-none"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">💡 Tip: Use {'{time}'}, {'{name}'} as placeholders — replace before sending</p>
                 </div>
 
                 {/* Schedule time */}

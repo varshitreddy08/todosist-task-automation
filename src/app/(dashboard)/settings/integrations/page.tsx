@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useSession, signIn, signOut } from 'next-auth/react'
+import { useSession, signIn } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import {
   MessageSquare, Mail, Key, Plus, Trash2, Copy, CheckCircle2,
-  Loader2, RefreshCw, X, ExternalLink, Wifi, WifiOff, Shield
+  Loader2, RefreshCw, X, ExternalLink, Wifi, WifiOff, Shield, Puzzle, Download, Chrome
 } from 'lucide-react'
 
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -23,7 +23,7 @@ type ApiToken = { id: string; name: string; last_used: string | null; created_at
 type WaStatus = { connected: boolean; state?: string }
 
 export default function IntegrationsPage() {
-  const { data: session } = useSession()
+  const { data: session, update: updateSession } = useSession()
   const [waStep, setWaStep] = useState<'idle' | 'credentials' | 'qr' | 'connected'>('idle')
   const [waInstanceId, setWaInstanceId] = useState('')
   const [waApiToken, setWaApiToken] = useState('')
@@ -244,7 +244,11 @@ export default function IntegrationsPage() {
               <CheckCircle2 className="w-4 h-4" /> Gmail connected as <span className="font-medium">{session?.user?.email}</span>
             </div>
             <p className="text-xs text-muted-foreground">AI-scheduled emails will send directly from your Gmail inbox.</p>
-            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => signOut({ callbackUrl: '/settings/integrations' })}>
+            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={async () => {
+              await fetch('/api/integrations/gmail/disconnect', { method: 'DELETE' })
+              await updateSession({ has_gmail: false })
+              toast.success('Gmail disconnected')
+            }}>
               <X className="w-3.5 h-3.5 mr-1.5" /> Disconnect Gmail
             </Button>
           </div>
@@ -257,6 +261,46 @@ export default function IntegrationsPage() {
             </Button>
           </div>
         )}
+      </Card>
+
+      {/* ── Chrome Extension ── */}
+      <Card className="p-5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center">
+            <Puzzle className="w-5 h-5 text-blue-500" />
+          </div>
+          <div>
+            <p className="font-semibold">Chrome Extension</p>
+            <p className="text-xs text-muted-foreground">Quick access to tasks and study timer from any webpage</p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1.5">
+            <p className="font-medium text-foreground text-sm">How to install:</p>
+            <p>1. Download the extension from GitHub below</p>
+            <p>2. Open Chrome → go to <code className="bg-muted px-1 rounded">chrome://extensions</code></p>
+            <p>3. Enable <strong>Developer mode</strong> (top-right toggle)</p>
+            <p>4. Click <strong>Load unpacked</strong> → select the <code className="bg-muted px-1 rounded">extension</code> folder</p>
+            <p>5. Generate an API token below → paste it into the extension</p>
+          </div>
+          <div className="flex gap-2">
+            <a
+              href={`https://github.com/varshitreddy08/userinterface/archive/refs/heads/main.zip`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              <Download className="w-4 h-4" /> Download Extension (ZIP)
+            </a>
+            <a
+              href="chrome://extensions"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors"
+              onClick={e => { e.preventDefault(); navigator.clipboard.writeText('chrome://extensions'); toast.success('Copied! Paste in Chrome address bar') }}
+            >
+              <ExternalLink className="w-4 h-4" /> Open Chrome Extensions
+            </a>
+          </div>
+        </div>
       </Card>
 
       {/* ── API Tokens ── */}

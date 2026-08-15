@@ -42,23 +42,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user?.password) return null
         const valid = await bcrypt.compare(credentials.password as string, user.password)
         if (!valid) return null
-        return { id: user.id, email: user.email, name: user.name, image: user.image }
+        return { id: user.id, email: user.email, name: user.name ?? user.email?.split('@')[0] ?? 'User', image: user.image }
       },
     }),
   ],
   session: { strategy: 'jwt' },
   pages: { signIn: '/login' },
   callbacks: {
-    jwt({ token, user, account }) {
+    jwt({ token, user, account, trigger, session: updateData }) {
       if (user?.id) token.id = user.id
+      if (user?.name) token.name = user.name
+      if (user?.email) token.email = user.email
+      if (user?.image) token.picture = user.image
       if (account?.access_token) token.google_access_token = account.access_token
       if (account?.refresh_token) token.google_refresh_token = account.refresh_token
       if (account?.provider === 'google') token.has_gmail = true
+      if (trigger === 'update' && updateData && 'has_gmail' in updateData) {
+        token.has_gmail = updateData.has_gmail
+      }
       return token
     },
     session({ session, token }) {
       if (token.id) session.user.id = token.id as string
-      if (token.has_gmail) (session as any).has_gmail = true
+      if (token.name) session.user.name = token.name as string
+      if (token.email) session.user.email = token.email as string
+      if (token.picture) session.user.image = token.picture as string
+      ;(session as any).has_gmail = token.has_gmail ?? false
       return session
     },
   },

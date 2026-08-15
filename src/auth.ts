@@ -19,6 +19,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      authorization: {
+        params: {
+          scope: 'openid email profile https://www.googleapis.com/auth/gmail.send',
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
     }),
     GitHub({
       clientId: process.env.GITHUB_ID,
@@ -42,12 +49,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt' },
   pages: { signIn: '/login' },
   callbacks: {
-    jwt({ token, user }) {
+    jwt({ token, user, account }) {
       if (user?.id) token.id = user.id
+      if (account?.access_token) token.google_access_token = account.access_token
+      if (account?.refresh_token) token.google_refresh_token = account.refresh_token
+      if (account?.provider === 'google') token.has_gmail = true
       return token
     },
     session({ session, token }) {
       if (token.id) session.user.id = token.id as string
+      if (token.has_gmail) (session as any).has_gmail = true
       return session
     },
   },

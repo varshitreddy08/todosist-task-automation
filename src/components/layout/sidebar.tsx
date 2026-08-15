@@ -12,7 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard, CheckSquare, FolderOpen, Calendar, BarChart3,
   Settings, Inbox, Plus,
-  Target, Heart, Clock, X, CheckCircle2
+  Target, Heart, Clock, X, CheckCircle2, Zap, BookOpen, Plug
 } from 'lucide-react'
 import { useProjects } from '@/hooks/useProjects'
 
@@ -32,9 +32,12 @@ const navItems = [
 
 const productivityItems = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/study', label: 'Study Hub', icon: BookOpen },
   { href: '/habits', label: 'Habits', icon: Heart },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/focus', label: 'Focus Mode', icon: Clock },
+  { href: '/automations', label: 'Automations', icon: Zap },
+  { href: '/settings/integrations', label: 'Integrations', icon: Plug },
 ]
 
 export function DashboardSidebar({ user }: { user: AppUser }) {

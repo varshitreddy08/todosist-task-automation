@@ -132,3 +132,72 @@ export const goals = pgTable('goals', {
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 })
+
+export const user_integrations = pgTable('user_integrations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(), // 'whatsapp' | 'gmail'
+  config: text('config').notNull().default('{}'), // JSON
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+})
+
+export const api_tokens = pgTable('api_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  token: text('token').notNull(),
+  last_used: timestamp('last_used'),
+  created_at: timestamp('created_at').defaultNow(),
+})
+
+export const study_sessions = pgTable('study_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  subject: text('subject').notNull(),
+  duration_minutes: integer('duration_minutes').notNull(),
+  notes: text('notes'),
+  created_at: timestamp('created_at').defaultNow(),
+})
+
+export const flashcard_decks = pgTable('flashcard_decks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  subject: text('subject'),
+  created_at: timestamp('created_at').defaultNow(),
+})
+
+export const flashcards = pgTable('flashcards', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  deck_id: uuid('deck_id').notNull().references(() => flashcard_decks.id, { onDelete: 'cascade' }),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  front: text('front').notNull(),
+  back: text('back').notNull(),
+  interval_days: integer('interval_days').notNull().default(1),
+  ease_factor: integer('ease_factor').notNull().default(250),
+  due_date: text('due_date'),
+  created_at: timestamp('created_at').defaultNow(),
+})
+
+export const notifications = pgTable('notifications', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').$type<'deadline' | 'ai' | 'reminder' | 'achievement' | 'system'>().notNull().default('system'),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  read: boolean('read').notNull().default(false),
+  created_at: timestamp('created_at').defaultNow(),
+})
+
+export const scheduled_emails = pgTable('scheduled_emails', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  to_email: text('to_email').notNull(),
+  subject: text('subject').notNull(),
+  body: text('body').notNull(),
+  scheduled_at: timestamp('scheduled_at').notNull(),
+  sent_at: timestamp('sent_at'),
+  status: text('status').$type<'pending' | 'sent' | 'failed'>().notNull().default('pending'),
+  created_at: timestamp('created_at').defaultNow(),
+})

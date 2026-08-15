@@ -37,6 +37,16 @@ export async function GET(req: NextRequest) {
       const today = new Date().toISOString().split('T')[0]
       rows = await db.select({ due_date: tasks.due_date, status: tasks.status }).from(tasks)
         .where(and(eq(tasks.created_by, userId), gte(tasks.due_date, weekStart), lte(tasks.due_date, today)))
+    } else if (filter === 'calendar') {
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      const month = url.searchParams.get('month') ?? currentMonth
+      const start = `${month}-01`
+      const end = new Date(new Date(start).getFullYear(), new Date(start).getMonth() + 1, 0).toISOString().split('T')[0]
+      rows = await db.select({
+        id: tasks.id, title: tasks.title, status: tasks.status, priority: tasks.priority,
+        due_date: tasks.due_date, due_time: tasks.due_time,
+      }).from(tasks)
+        .where(and(eq(tasks.created_by, userId), gte(tasks.due_date, start), lte(tasks.due_date, end)))
     } else if (filter === 'analytics') {
       const since = url.searchParams.get('since') ?? ''
       rows = await db.select({

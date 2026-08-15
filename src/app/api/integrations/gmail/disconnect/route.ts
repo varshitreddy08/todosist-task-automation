@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/auth'
+import { auth } from '@/auth'
 import { db } from '@/db'
 import { accounts } from '@/db/schema'
 import { and, eq } from 'drizzle-orm'
 
 export async function DELETE() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   await db.update(accounts)

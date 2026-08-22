@@ -215,10 +215,28 @@ export const scheduled_emails = pgTable('scheduled_emails', {
   id: uuid('id').primaryKey().defaultRandom(),
   user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   to_email: text('to_email').notNull(),
+  cc_email: text('cc_email'),
+  from_email: text('from_email'),
   subject: text('subject').notNull(),
   body: text('body').notNull(),
   scheduled_at: timestamp('scheduled_at').notNull(),
   sent_at: timestamp('sent_at'),
   status: text('status').$type<'pending' | 'sent' | 'failed'>().notNull().default('pending'),
+  created_at: timestamp('created_at').defaultNow(),
+})
+
+export const activity_log = pgTable('activity_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  task_id: uuid('task_id'),       // no FK — task may be deleted
+  project_id: uuid('project_id'), // no FK — project may be deleted
+  action: text('action').$type<
+    'added' | 'completed' | 'uncompleted' |
+    'changed_priority' | 'set_date' | 'changed_date' | 'deleted'
+  >().notNull(),
+  task_title: text('task_title').notNull(),   // snapshot at time of action
+  project_name: text('project_name'),          // snapshot ('Inbox' if null)
+  old_value: text('old_value'),
+  new_value: text('new_value'),
   created_at: timestamp('created_at').defaultNow(),
 })

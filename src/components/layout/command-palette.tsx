@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useAppStore } from '@/store/useAppStore'
 import { useProjects } from '@/hooks/useProjects'
-import { Search, CheckSquare, FolderOpen, LayoutDashboard, BarChart3, Zap, Target, Clock, Plus, BookOpen, Calendar, Heart, ArrowRight } from 'lucide-react'
+import { Search, CheckSquare, FolderOpen, LayoutDashboard, BarChart3, Target, Clock, Plus, BookOpen, Calendar, Heart, ArrowRight } from 'lucide-react'
 import type { Task } from '@/types'
 
 const QUICK_ACTIONS = [
@@ -20,7 +20,6 @@ const QUICK_ACTIONS = [
   { label: 'Habits',       icon: Heart, action: 'nav:/habits' },
   { label: 'Goals',        icon: Target, action: 'nav:/goals' },
   { label: 'Focus Mode',   icon: Clock, action: 'nav:/focus' },
-  { label: 'Automations',  icon: Zap, action: 'nav:/automations' },
 ]
 
 export function CommandPalette() {

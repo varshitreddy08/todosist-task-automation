@@ -23,9 +23,14 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
+    // Strip client-provided workspace_id — it can be stale (FK violation)
+    const { workspace_id: _ws, ...body } = await req.json()
     const [row] = await db.insert(projects).values({
-      ...body,
+      name: body.name,
+      description: body.description || null,
+      color: body.color || '#6366f1',
+      icon: body.icon || null,
+      is_favorite: body.is_favorite ?? false,
       created_by: session.user.id,
       progress: 0,
     }).returning()

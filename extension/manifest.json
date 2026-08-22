@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TaskFlow",
-  "version": "1.0.0",
-  "description": "TaskFlow — tasks, study timer, and WhatsApp scheduler in every tab",
+  "version": "1.1.0",
+  "description": "TaskFlow — tasks, Pomodoro timer, quick notes, and more in every tab",
   "permissions": ["storage", "alarms", "notifications"],
   "host_permissions": ["https://uid.varshitreddy.me/*", "http://localhost:3000/*"],
   "action": {

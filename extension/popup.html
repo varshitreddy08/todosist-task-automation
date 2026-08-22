@@ -6,31 +6,38 @@
 <title>TaskFlow</title>
 <link rel="stylesheet" href="popup.css">
 </head>
-<body>
+<body data-theme="light">
 <div id="app">
-  <!-- Login screen -->
+
+  <!-- ── Login screen ── -->
   <div id="screen-login" class="screen">
     <div class="brand">
       <div class="brand-icon">✓</div>
       <span class="brand-name">TaskFlow</span>
     </div>
-    <p class="subtitle">Enter your API token from<br>Settings → Integrations</p>
+    <p class="subtitle">Enter your API token from<br><strong>Settings → Integrations</strong></p>
     <div class="field">
-      <input type="password" id="token-input" placeholder="tf_xxxxxxxxxxxxxxxx" autocomplete="off">
+      <input type="password" id="token-input" class="input" placeholder="tf_xxxxxxxxxxxxxxxx" autocomplete="off">
     </div>
     <button class="btn btn-primary w-full" id="btn-connect">Connect</button>
-    <p class="hint">Get token at <a href="https://uid.varshitreddy.me/settings/integrations" target="_blank">uid.varshitreddy.me</a></p>
+    <p id="login-error" class="error-msg hidden"></p>
+    <p class="hint">Get your token at <a href="https://uid.varshitreddy.me/settings/integrations" target="_blank">uid.varshitreddy.me</a></p>
   </div>
 
-  <!-- Main screen -->
+  <!-- ── Main screen ── -->
   <div id="screen-main" class="screen hidden">
+
     <!-- Header -->
     <div class="header">
       <div class="user-info">
         <div class="avatar" id="user-avatar">?</div>
-        <span id="user-name">Loading...</span>
+        <div>
+          <div id="user-name" class="user-name">Loading...</div>
+          <div id="user-email" class="user-email"></div>
+        </div>
       </div>
       <div class="header-actions">
+        <button class="icon-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
         <a href="https://uid.varshitreddy.me/dashboard" target="_blank" class="icon-btn" title="Open TaskFlow">↗</a>
         <button class="icon-btn" id="btn-logout" title="Disconnect">✕</button>
       </div>
@@ -40,61 +47,115 @@
     <div class="tabs">
       <button class="tab active" data-tab="tasks">Tasks</button>
       <button class="tab" data-tab="timer">Timer</button>
+      <button class="tab" data-tab="notes">Notes</button>
       <button class="tab" data-tab="add">+ Add</button>
     </div>
 
-    <!-- Tasks tab -->
+    <!-- ── Tasks tab ── -->
     <div id="tab-tasks" class="tab-content">
-      <div class="tab-header">
-        <span class="tab-title">Today</span>
-        <span id="tasks-count" class="badge"></span>
+      <div class="filter-bar">
+        <button class="filter-btn active" data-filter="today">Today</button>
+        <button class="filter-btn" data-filter="upcoming">Upcoming</button>
+        <button class="filter-btn" data-filter="overdue">Overdue</button>
+        <button class="filter-btn" data-filter="all">All</button>
+        <button class="icon-btn-sm" id="btn-refresh" title="Refresh">↺</button>
+      </div>
+      <div id="tasks-count-bar" class="count-bar hidden">
+        <span id="tasks-count-label"></span>
       </div>
       <div id="tasks-list" class="tasks-list">
         <div class="loading">Loading tasks...</div>
       </div>
     </div>
 
-    <!-- Timer tab -->
+    <!-- ── Timer tab ── -->
     <div id="tab-timer" class="tab-content hidden">
       <div class="timer-section">
+        <!-- Mode toggle -->
+        <div class="mode-toggle">
+          <button class="mode-btn active" data-mode="regular">Regular</button>
+          <button class="mode-btn" data-mode="pomodoro">🍅 Pomodoro</button>
+        </div>
+
+        <!-- Pomodoro phase indicator -->
+        <div id="pomodoro-phase" class="phase-badge hidden">
+          <span id="phase-label">Work · 25:00</span>
+        </div>
+
+        <!-- Subject selector -->
         <select id="timer-subject" class="input">
           <option value="">Select subject...</option>
-          <option>Math</option><option>Physics</option><option>Chemistry</option>
-          <option>Biology</option><option>History</option><option>English</option>
-          <option>CS</option><option>Economics</option><option>Other</option>
+          <option>Math</option>
+          <option>Physics</option>
+          <option>Chemistry</option>
+          <option>Biology</option>
+          <option>History</option>
+          <option>English</option>
+          <option>CS / Programming</option>
+          <option>Economics</option>
+          <option>DBMS</option>
+          <option>Networks</option>
+          <option>OS</option>
+          <option>Other</option>
         </select>
+
+        <!-- Timer display -->
         <div class="timer-display" id="timer-display">00:00</div>
         <div id="timer-subject-badge" class="subject-badge hidden"></div>
+
+        <!-- Pomodoro cycle counter -->
+        <div id="pomodoro-cycles-row" class="cycles-row hidden">
+          <span>🍅</span>
+          <span id="pomodoro-cycles">0 cycles done</span>
+        </div>
+
+        <!-- Controls -->
         <div class="timer-controls">
-          <button class="btn btn-primary" id="btn-timer-toggle">Start</button>
+          <button class="btn btn-primary flex-1" id="btn-timer-toggle">Start</button>
           <button class="btn btn-outline" id="btn-timer-reset">Reset</button>
         </div>
+
+        <!-- Save section (regular mode) -->
         <div id="timer-save-section" class="hidden">
           <textarea id="timer-notes" class="input textarea" placeholder="Session notes (optional)..." rows="2"></textarea>
-          <button class="btn btn-success w-full" id="btn-save-session">Save Session</button>
+          <button class="btn btn-success w-full" id="btn-save-session">💾 Save Session</button>
         </div>
       </div>
     </div>
 
-    <!-- Add task tab -->
+    <!-- ── Notes tab ── -->
+    <div id="tab-notes" class="tab-content hidden">
+      <div class="notes-section">
+        <textarea id="notes-area" class="notes-textarea" placeholder="Quick scratch pad — auto-saved...&#10;&#10;Use this for quick thoughts, formulas, links, anything you want to jot down fast."></textarea>
+        <div class="notes-footer">
+          <span id="notes-status" class="notes-status">Saved</span>
+          <button class="btn btn-outline btn-sm" id="btn-clear-notes">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Add task tab ── -->
     <div id="tab-add" class="tab-content hidden">
       <div class="add-form">
         <input type="text" id="new-task-title" class="input" placeholder="Task title..." autocomplete="off">
+        <input type="text" id="new-task-desc" class="input" placeholder="Description (optional)..." autocomplete="off">
         <div class="row">
           <input type="date" id="new-task-date" class="input">
           <select id="new-task-priority" class="input">
-            <option value="p4">P4 - Low</option>
-            <option value="p3">P3 - Normal</option>
-            <option value="p2" selected>P2 - High</option>
-            <option value="p1">P1 - Urgent</option>
+            <option value="p4">P4 · Low</option>
+            <option value="p3">P3 · Normal</option>
+            <option value="p2" selected>P2 · High</option>
+            <option value="p1">P1 · Urgent</option>
           </select>
         </div>
         <button class="btn btn-primary w-full" id="btn-add-task">Add Task</button>
-        <div id="add-success" class="success-msg hidden">✓ Task added!</div>
+        <div id="add-success" class="success-msg hidden">✓ Task added! Switch to Tasks to see it.</div>
+        <div id="add-error" class="error-msg hidden"></div>
       </div>
     </div>
-  </div>
-</div>
+
+  </div><!-- /screen-main -->
+</div><!-- /app -->
 <script src="popup.js"></script>
 </body>
 </html>

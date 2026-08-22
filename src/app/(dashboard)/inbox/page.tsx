@@ -1,262 +1,609 @@
 'use client'
-import { useState } from 'react'
-import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, CheckCircle2, AlertCircle, Zap, Clock, Star, Loader2, Send, X, Calendar, Trash2, Mail } from 'lucide-react'
-import { format, formatDistanceToNow } from 'date-fns'
+import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
+import { useProjects } from '@/hooks/useProjects'
+import { cn } from '@/lib/utils'
+import {
+  ChevronRight, ChevronDown, Plus, Loader2,
+  Pencil, MessageSquare, MoreHorizontal, Flag, Trash2,
+} from 'lucide-react'
+import { TaskDatePicker } from '@/components/shared/task-date-picker'
+import type { Task } from '@/types'
 
-type Notification = {
-  id: string
-  type: 'deadline' | 'ai' | 'reminder' | 'achievement' | 'system'
-  title: string
-  body: string
-  read: boolean
-  created_at: string
-}
+const PRIORITY_OPTIONS = [
+  { value: 'p1', label: 'Priority 1', color: 'text-red-500' },
+  { value: 'p2', label: 'Priority 2', color: 'text-orange-400' },
+  { value: 'p3', label: 'Priority 3', color: 'text-blue-400' },
+  { value: 'p4', label: 'No priority', color: 'text-muted-foreground' },
+]
 
-type ScheduledEmail = {
-  id: string
-  to_email: string
-  subject: string
-  scheduled_at: string
-  status: 'pending' | 'sent' | 'failed'
-}
-
-const typeConfig: Record<Notification['type'], { icon: React.ElementType; color: string; bg: string }> = {
-  deadline: { icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-950/30' },
-  ai: { icon: Zap, color: 'text-primary', bg: 'bg-primary/10' },
-  reminder: { icon: Clock, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30' },
-  achievement: { icon: Star, color: 'text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-950/30' },
-  system: { icon: Bell, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/30' },
-}
-
-async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+// ── API ──────────────────────────────────────────────────────────────────────
+async function patchTask(task: Task): Promise<Task> {
+  const newStatus = task.status === 'completed' ? 'todo' : 'completed'
+  const res = await fetch(`/api/tasks/${task.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      status: newStatus,
+      completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
+    }),
+  })
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
 
-export default function InboxPage() {
-  const [tab, setTab] = useState<'notifications' | 'scheduled'>('notifications')
-  const [showSchedule, setShowSchedule] = useState(false)
-  const [form, setForm] = useState({ to_email: '', subject: '', body: '', scheduled_at: '' })
-  const queryClient = useQueryClient()
-
-  const { data: notifications = [], isLoading: loadingNotifs } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: () => apiFetch<Notification[]>('/api/notifications'),
-    refetchInterval: 30000,
+async function postTask(data: { title: string; project_id?: string; priority?: string }): Promise<Task> {
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
   })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
 
-  const { data: scheduledEmails = [], isLoading: loadingEmails } = useQuery({
-    queryKey: ['scheduled-emails'],
-    queryFn: () => apiFetch<ScheduledEmail[]>('/api/scheduled-emails'),
-    refetchInterval: 30000,
+async function deleteTask(id: string): Promise<void> {
+  const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+async function renameTask(id: string, title: string): Promise<Task> {
+  const res = await fetch(`/api/tasks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
   })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
 
-  const markRead = useMutation({
-    mutationFn: (id: string) => apiFetch(`/api/notifications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ read: true }) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-  })
+// ── Inline add-task form ─────────────────────────────────────────────────────
+const INBOX_TODAY = new Date().toISOString().split('T')[0]
 
-  const markAllRead = useMutation({
-    mutationFn: () => apiFetch('/api/notifications', { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-  })
+function InlineAddTask({ onAdd, onClose, indent = false }: {
+  onAdd: (title: string, priority: string) => Promise<void>
+  onClose: () => void
+  indent?: boolean
+}) {
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [priority, setPriority] = useState('p4')
+  const [dueDate, setDueDate] = useState('')
+  const [showPriority, setShowPriority] = useState(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const priorityRef = useRef<HTMLDivElement>(null)
 
-  const deleteNotif = useMutation({
-    mutationFn: (id: string) => apiFetch(`/api/notifications/${id}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-  })
+  useEffect(() => { ref.current?.focus() }, [])
 
-  const scheduleEmail = useMutation({
-    mutationFn: (data: typeof form) => apiFetch('/api/scheduled-emails', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, scheduled_at: new Date(data.scheduled_at).toISOString() }),
-    }),
-    onSuccess: () => {
-      toast.success('Email scheduled!')
-      setForm({ to_email: '', subject: '', body: '', scheduled_at: '' })
-      setShowSchedule(false)
-      queryClient.invalidateQueries({ queryKey: ['scheduled-emails'] })
-    },
-    onError: () => toast.error('Failed to schedule email'),
-  })
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (priorityRef.current && !priorityRef.current.contains(e.target as Node)) setShowPriority(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
 
-  const cancelEmail = useMutation({
-    mutationFn: (id: string) => apiFetch(`/api/scheduled-emails/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('Email cancelled')
-      queryClient.invalidateQueries({ queryKey: ['scheduled-emails'] })
-    },
-  })
+  async function submit() {
+    if (!title.trim() || busy) return
+    setBusy(true)
+    try { await onAdd(title.trim(), priority); onClose() }
+    finally { setBusy(false) }
+  }
 
-  const unread = notifications.filter(n => !n.read).length
-  const pendingEmails = scheduledEmails.filter(e => e.status === 'pending').length
+  const selectedPriority = PRIORITY_OPTIONS.find(p => p.value === priority)!
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            Inbox
-            {unread > 0 && <Badge className="gradient-primary text-white border-0">{unread}</Badge>}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">{unread} unread notification{unread !== 1 ? 's' : ''}</p>
+    <div className={cn(
+      'rounded-xl border border-border bg-background shadow-sm p-3 mb-2',
+      indent && 'ml-9'
+    )}>
+      <textarea
+        ref={ref}
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+          if (e.key === 'Escape') onClose()
+        }}
+        placeholder="Task name"
+        rows={1}
+        className="w-full text-sm resize-none outline-none bg-transparent placeholder:text-muted-foreground/50 leading-relaxed"
+      />
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+        <div className="flex items-center gap-1">
+          {/* Schedule — opens full calendar */}
+          <TaskDatePicker value={dueDate || INBOX_TODAY} onChange={setDueDate} />
+
+          {/* Priority picker */}
+          <div className="relative" ref={priorityRef}>
+            <button
+              onClick={() => setShowPriority(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors',
+                priority !== 'p4' ? `${selectedPriority.color} bg-muted` : 'text-muted-foreground hover:bg-muted'
+              )}
+            >
+              <Flag className={cn('w-3.5 h-3.5', priority !== 'p4' ? selectedPriority.color : '')} />
+              {priority !== 'p4' ? selectedPriority.label : 'Priority'}
+            </button>
+            {showPriority && (
+              <div className="absolute top-full left-0 mt-1 w-40 bg-background border border-border rounded-xl shadow-lg z-50 py-1">
+                {PRIORITY_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { setPriority(opt.value); setShowPriority(false) }}
+                    className={cn(
+                      'w-full text-left px-3 py-2 text-[12px] hover:bg-muted transition-colors flex items-center gap-2.5',
+                      opt.value === priority ? 'font-semibold' : ''
+                    )}
+                  >
+                    <Flag className={cn('w-3.5 h-3.5', opt.color)} />
+                    <span>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          {unread > 0 && tab === 'notifications' && (
-            <Button variant="ghost" size="sm" onClick={() => markAllRead.mutate()} className="text-primary">
-              Mark all read
-            </Button>
-          )}
-          <Button className="gradient-primary text-white border-0 gap-2" size="sm" onClick={() => setShowSchedule(true)}>
-            <Mail className="w-4 h-4" /> Schedule Email
-          </Button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!title.trim() || busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+            Add task
+          </button>
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-muted rounded-lg mb-4 w-fit">
-        <button onClick={() => setTab('notifications')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'notifications' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
-          Notifications {unread > 0 && <span className="ml-1 text-xs text-primary">({unread})</span>}
-        </button>
-        <button onClick={() => setTab('scheduled')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'scheduled' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
-          Scheduled Emails {pendingEmails > 0 && <span className="ml-1 text-xs text-primary">({pendingEmails})</span>}
-        </button>
+// ── Single task row ───────────────────────────────────────────────────────────
+function TaskRow({ task, onToggle, onDelete, onRename }: {
+  task: Task
+  onToggle: () => void
+  onDelete: () => void
+  onRename: (title: string) => void
+}) {
+  const isDone = task.status === 'completed'
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(task.title)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!showMenu) return
+    function close(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [showMenu])
+
+  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
+
+  function saveEdit() {
+    const trimmed = editTitle.trim()
+    if (trimmed && trimmed !== task.title) onRename(trimmed)
+    else setEditTitle(task.title)
+    setEditing(false)
+  }
+
+  function startEdit() { setEditTitle(task.title); setEditing(true) }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2 py-2 px-1">
+        <div className="w-4 flex-shrink-0" />
+        <div className={cn(
+          'flex-shrink-0 w-[18px] h-[18px] rounded-full border-[1.5px]',
+          isDone ? 'bg-[#ccc] border-[#ccc]' : 'border-[#ccc]'
+        )} />
+        <input
+          ref={inputRef}
+          value={editTitle}
+          onChange={e => setEditTitle(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') saveEdit()
+            if (e.key === 'Escape') { setEditTitle(task.title); setEditing(false) }
+          }}
+          onBlur={saveEdit}
+          className="flex-1 text-sm bg-transparent outline-none border-b border-[#db4c3f] text-[#202020] dark:text-foreground pb-0.5"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn(
+      'flex items-center gap-2 py-2 px-1 rounded-lg group hover:bg-[#f5f3f0] dark:hover:bg-muted/40 transition-colors',
+      isDone && 'opacity-50'
+    )}>
+      {/* 6-dot drag handle — hover only */}
+      <div className="w-4 flex-shrink-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-grab">
+        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" className="text-muted-foreground/50">
+          <circle cx="2" cy="2"  r="1.2"/><circle cx="8" cy="2"  r="1.2"/>
+          <circle cx="2" cy="7"  r="1.2"/><circle cx="8" cy="7"  r="1.2"/>
+          <circle cx="2" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/>
+        </svg>
       </div>
 
-      {/* Schedule Email Modal */}
-      <AnimatePresence>
-        {showSchedule && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="mb-6">
-            <Card className="p-5 border-primary/30">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2"><Calendar className="w-4 h-4 text-primary" /> Schedule an Email</h3>
-                <button onClick={() => setShowSchedule(false)}><X className="w-4 h-4 text-muted-foreground hover:text-foreground" /></button>
-              </div>
-              <div className="space-y-3">
-                <Input placeholder="To (email address)" type="email" value={form.to_email} onChange={e => setForm(f => ({ ...f, to_email: e.target.value }))} />
-                <Input placeholder="Subject" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
-                <Textarea placeholder="Email body..." rows={4} value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} />
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Send at</label>
-                  <Input type="datetime-local" value={form.scheduled_at} onChange={e => setForm(f => ({ ...f, scheduled_at: e.target.value }))} min={format(new Date(), "yyyy-MM-dd'T'HH:mm")} />
-                </div>
-                <Button className="w-full gradient-primary text-white border-0 gap-2" onClick={() => scheduleEmail.mutate(form)} disabled={!form.to_email || !form.subject || !form.body || !form.scheduled_at || scheduleEmail.isPending}>
-                  {scheduleEmail.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  Schedule Email
-                </Button>
-              </div>
-            </Card>
-          </motion.div>
+      {/* Circle checkbox */}
+      <button
+        onClick={onToggle}
+        className={cn(
+          'flex-shrink-0 w-[18px] h-[18px] rounded-full border-[1.5px] flex items-center justify-center transition-all',
+          isDone ? 'bg-[#ccc] border-[#ccc]' : 'border-[#ccc] hover:border-[#888]'
         )}
-      </AnimatePresence>
+      >
+        {isDone && (
+          <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 10" fill="none">
+            <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+      </button>
 
-      {/* Notifications Tab */}
-      {tab === 'notifications' && (
-        <div className="space-y-2">
-          {loadingNotifs ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-          ) : notifications.length === 0 ? (
-            <div className="text-center py-12">
-              <Bell className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No notifications yet</p>
-              <p className="text-xs text-muted-foreground mt-1">AI reminders and task alerts will appear here</p>
-            </div>
-          ) : (
-            notifications.map((notif, i) => {
-              const cfg = typeConfig[notif.type] ?? typeConfig.system
-              const Icon = cfg.icon
-              return (
-                <motion.div
-                  key={notif.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className={`flex items-start gap-4 p-4 rounded-xl border bg-card hover:shadow-sm transition-all cursor-pointer group ${!notif.read ? 'border-primary/30' : 'opacity-70'}`}
-                  onClick={() => !notif.read && markRead.mutate(notif.id)}
-                >
-                  <div className={`w-9 h-9 rounded-xl ${cfg.bg} flex items-center justify-center flex-shrink-0`}>
-                    <Icon className={`w-5 h-5 ${cfg.color}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className={`text-sm font-medium ${!notif.read ? '' : 'text-muted-foreground'}`}>{notif.title}</p>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {!notif.read && <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />}
-                        <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}</span>
-                        <button onClick={e => { e.stopPropagation(); deleteNotif.mutate(notif.id) }} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{notif.body}</p>
-                  </div>
-                </motion.div>
-              )
-            })
-          )}
-        </div>
-      )}
+      {/* Title */}
+      <span className={cn(
+        'flex-1 text-sm text-[#202020] dark:text-foreground min-w-0',
+        isDone && 'line-through text-[#999]'
+      )}>
+        {task.title}
+      </span>
 
-      {/* Scheduled Emails Tab */}
-      {tab === 'scheduled' && (
-        <div className="space-y-2">
-          {loadingEmails ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-          ) : scheduledEmails.length === 0 ? (
-            <div className="text-center py-12">
-              <Mail className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No scheduled emails</p>
-              <button onClick={() => setShowSchedule(true)} className="mt-2 text-sm text-primary hover:underline">Schedule one now</button>
-            </div>
-          ) : (
-            scheduledEmails.map((email, i) => (
-              <motion.div
-                key={email.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.03 }}
-                className="flex items-start gap-4 p-4 rounded-xl border bg-card"
+      {/* Hover action icons */}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <button
+          onClick={startEdit}
+          title="Edit task"
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#e8e4de] dark:hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        <button
+          title="Add subtask"
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#e8e4de] dark:hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="1" y="5" width="8" height="8" rx="1.5"/>
+            <path d="M5 5V3.5A1.5 1.5 0 016.5 2h7A1.5 1.5 0 0115 3.5v7A1.5 1.5 0 0113.5 12H12"/>
+          </svg>
+        </button>
+        <button
+          title="Comment"
+          className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#e8e4de] dark:hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+        </button>
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setShowMenu(v => !v)}
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#e8e4de] dark:hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <MoreHorizontal className="w-3.5 h-3.5" />
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-background border border-border rounded-xl shadow-lg z-50 py-1">
+              <button
+                onClick={() => { startEdit(); setShowMenu(false) }}
+                className="w-full text-left px-3 py-2 text-[13px] hover:bg-muted transition-colors flex items-center gap-2 text-foreground"
               >
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${email.status === 'sent' ? 'bg-emerald-50 dark:bg-emerald-950/30' : email.status === 'failed' ? 'bg-red-50 dark:bg-red-950/30' : 'bg-blue-50 dark:bg-blue-950/30'}`}>
-                  <Send className={`w-5 h-5 ${email.status === 'sent' ? 'text-emerald-500' : email.status === 'failed' ? 'text-red-500' : 'text-blue-500'}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-medium">{email.subject}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">To: {email.to_email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {email.status === 'sent' ? 'Sent' : email.status === 'failed' ? 'Failed' : 'Scheduled for'}{' '}
-                        {format(new Date(email.scheduled_at), 'MMM d, yyyy h:mm a')}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Badge variant={email.status === 'sent' ? 'default' : email.status === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
-                        {email.status}
-                      </Badge>
-                      {email.status === 'pending' && (
-                        <button onClick={() => cancelEmail.mutate(email.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))
+                <Pencil className="w-3.5 h-3.5 text-muted-foreground" /> Edit task
+              </button>
+              <div className="h-px bg-border my-1" />
+              <button
+                onClick={() => { onDelete(); setShowMenu(false) }}
+                className="w-full text-left px-3 py-2 text-[13px] hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors flex items-center gap-2 text-red-500"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete task
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Project section ──────────────────────────────────────────────────────────
+function ProjectSection({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const [collapsed, setCollapsed] = useState(false)
+  const [addingTask, setAddingTask] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+    queryKey: ['tasks', projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/tasks?projectId=${projectId}`)
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+    staleTime: 30000,
+  })
+
+  const toggle = useMutation({
+    mutationFn: patchTask,
+    onMutate: async (task) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks', projectId] })
+      const prev = queryClient.getQueryData<Task[]>(['tasks', projectId])
+      queryClient.setQueryData<Task[]>(['tasks', projectId], old =>
+        old?.map(t => t.id === task.id
+          ? { ...t, status: t.status === 'completed' ? 'todo' : 'completed' as const }
+          : t
+        ) ?? []
+      )
+      return { prev }
+    },
+    onError: (_e, _t, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tasks', projectId], ctx.prev)
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['tasks'] }) },
+  })
+
+  const create = useMutation({
+    mutationFn: ({ title, priority }: { title: string; priority: string }) =>
+      postTask({ title, project_id: projectId, priority }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', projectId] }),
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteTask(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks', projectId] })
+      const prev = queryClient.getQueryData<Task[]>(['tasks', projectId])
+      queryClient.setQueryData<Task[]>(['tasks', projectId], old => old?.filter(t => t.id !== id) ?? [])
+      return { prev }
+    },
+    onError: (_e, _t, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tasks', projectId], ctx.prev)
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['tasks'] }) },
+  })
+
+  const rename = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) => renameTask(id, title),
+    onMutate: async ({ id, title }) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks', projectId] })
+      const prev = queryClient.getQueryData<Task[]>(['tasks', projectId])
+      queryClient.setQueryData<Task[]>(['tasks', projectId], old => old?.map(t => t.id === id ? { ...t, title } : t) ?? [])
+      return { prev }
+    },
+    onError: (_e, _t, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tasks', projectId], ctx.prev)
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['tasks', projectId] }) },
+  })
+
+  const active = tasks.filter(t => !t.parent_id && t.status !== 'completed')
+
+  if (isLoading) {
+    return (
+      <div className="py-3 flex items-center gap-3">
+        <div className="w-3 h-3 rounded bg-muted animate-pulse" />
+        <div className="w-32 h-3.5 rounded bg-muted animate-pulse" />
+        <div className="flex-1 h-px bg-border" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-5">
+      {/* ── Section header ─────────────────────────────────────────────── */}
+      <div
+        className="flex items-center gap-2 py-2 cursor-pointer select-none group/header"
+        onClick={() => setCollapsed(v => !v)}
+      >
+        {collapsed
+          ? <ChevronRight className="w-3.5 h-3.5 text-[#808080] flex-shrink-0" />
+          : <ChevronDown  className="w-3.5 h-3.5 text-[#808080] flex-shrink-0" />}
+
+        <span className="text-[14px] font-bold text-[#202020] dark:text-foreground">
+          {projectName}
+        </span>
+
+        {active.length > 0 && (
+          <span className="text-[14px] text-[#808080] font-normal">{active.length}</span>
+        )}
+
+        {/* Full-width divider line — fills space between count and ··· */}
+        <div className="flex-1 h-px bg-[#f0ede8] dark:bg-border mx-1" />
+
+        {/* ··· menu button */}
+        <button
+          onClick={e => e.stopPropagation()}
+          className="text-[#aaa] hover:text-[#555] dark:hover:text-foreground transition-colors opacity-0 group-hover/header:opacity-100 w-6 h-6 flex items-center justify-center rounded flex-shrink-0"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* ── Tasks + Add task ────────────────────────────────────────────── */}
+      {!collapsed && (
+        <div className="pl-5">
+          {active.map(task => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              onToggle={() => toggle.mutate(task)}
+              onDelete={() => remove.mutate(task.id)}
+              onRename={(title) => rename.mutate({ id: task.id, title })}
+            />
+          ))}
+
+          {addingTask ? (
+            <InlineAddTask
+              indent
+              onAdd={(title, priority) => create.mutateAsync({ title, priority }).then(() => {})}
+              onClose={() => setAddingTask(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setAddingTask(true)}
+              className="flex items-center gap-2 py-1.5 px-1 text-[13px] text-[#db4c3f] hover:text-[#b0382d] transition-colors group/add mt-0.5"
+            >
+              <Plus className="w-4 h-4 flex-shrink-0" />
+              Add task
+            </button>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Main inbox page ──────────────────────────────────────────────────────────
+export default function InboxPage() {
+  const queryClient = useQueryClient()
+  const { data: projects = [], isLoading: projectsLoading } = useProjects()
+  const [addingTask, setAddingTask] = useState(false)
+
+  const { data: inboxTasks = [], isLoading: inboxLoading } = useQuery<Task[]>({
+    queryKey: ['tasks', 'inbox'],
+    queryFn: async () => {
+      const res = await fetch('/api/tasks')
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+    staleTime: 30000,
+  })
+
+  const toggleInbox = useMutation({
+    mutationFn: patchTask,
+    onMutate: async (task) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks', 'inbox'] })
+      const prev = queryClient.getQueryData<Task[]>(['tasks', 'inbox'])
+      queryClient.setQueryData<Task[]>(['tasks', 'inbox'], old =>
+        old?.map(t => t.id === task.id
+          ? { ...t, status: t.status === 'completed' ? 'todo' : 'completed' as const }
+          : t
+        ) ?? []
+      )
+      return { prev }
+    },
+    onError: (_e, _t, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tasks', 'inbox'], ctx.prev)
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['tasks'] }) },
+  })
+
+  const createInboxTask = useMutation({
+    mutationFn: ({ title, priority }: { title: string; priority: string }) => postTask({ title, priority }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks', 'inbox'] }),
+  })
+
+  const removeInboxTask = useMutation({
+    mutationFn: (id: string) => deleteTask(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks', 'inbox'] })
+      const prev = queryClient.getQueryData<Task[]>(['tasks', 'inbox'])
+      queryClient.setQueryData<Task[]>(['tasks', 'inbox'], old => old?.filter(t => t.id !== id) ?? [])
+      return { prev }
+    },
+    onError: (_e, _t, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tasks', 'inbox'], ctx.prev)
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['tasks'] }) },
+  })
+
+  const renameInboxTask = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) => renameTask(id, title),
+    onMutate: async ({ id, title }) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks', 'inbox'] })
+      const prev = queryClient.getQueryData<Task[]>(['tasks', 'inbox'])
+      queryClient.setQueryData<Task[]>(['tasks', 'inbox'], old => old?.map(t => t.id === id ? { ...t, title } : t) ?? [])
+      return { prev }
+    },
+    onError: (_e, _t, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tasks', 'inbox'], ctx.prev)
+    },
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['tasks', 'inbox'] }) },
+  })
+
+  const activeInbox = inboxTasks.filter(t => t.status !== 'completed')
+
+  if (inboxLoading && projectsLoading) {
+    return (
+      <div className="max-w-3xl mx-auto px-12 py-10">
+        <h1 className="text-[22px] font-bold text-[#202020] dark:text-foreground mb-4">Inbox</h1>
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto px-12 py-10">
+
+      {/* Title */}
+      <h1 className="text-[22px] font-bold text-[#202020] dark:text-foreground mb-1">
+        Inbox
+      </h1>
+
+      {/* Unassigned inbox tasks */}
+      {activeInbox.length > 0 && (
+        <div className="mb-1">
+          {activeInbox.map(task => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              onToggle={() => toggleInbox.mutate(task)}
+              onDelete={() => removeInboxTask.mutate(task.id)}
+              onRename={(title) => renameInboxTask.mutate({ id: task.id, title })}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Top-level + Add task */}
+      {addingTask ? (
+        <div className="mt-1 mb-4">
+          <InlineAddTask
+            onAdd={(title, priority) => createInboxTask.mutateAsync({ title, priority }).then(() => {})}
+            onClose={() => setAddingTask(false)}
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => setAddingTask(true)}
+          className="flex items-center gap-2 py-1.5 px-1 text-[13px] text-muted-foreground hover:text-[#db4c3f] transition-colors group mb-6"
+        >
+          <Plus className="w-4 h-4 flex-shrink-0 text-[#db4c3f]" />
+          Add task
+        </button>
+      )}
+
+      {/* Project sections */}
+      {projects.map(project => (
+        <ProjectSection
+          key={project.id}
+          projectId={project.id}
+          projectName={project.name}
+        />
+      ))}
+
+      {/* Empty projects prompt */}
+      {!projectsLoading && projects.length === 0 && (
+        <div className="mt-4 flex items-center gap-2 py-2">
+          <div className="flex-1 h-px bg-[#f0ede8] dark:bg-border" />
+          <Link
+            href="/projects"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[#808080] hover:text-[#db4c3f] rounded-lg hover:bg-[#f5f3f0] dark:hover:bg-muted/40 transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-3.5 h-3.5 flex-shrink-0" />
+            Add a project to see it here
+          </Link>
+          <div className="flex-1 h-px bg-[#f0ede8] dark:bg-border" />
+        </div>
+      )}
+
     </div>
   )
 }

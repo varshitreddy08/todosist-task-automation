@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { db } from '@/db'
-import { tasks } from '@/db/schema'
+import { tasks, projects, activity_log } from '@/db/schema'
 import { eq, and, isNull, lte, gte, gt, ne, ilike } from 'drizzle-orm'
 
 export async function GET(req: NextRequest) {
@@ -61,7 +61,6 @@ export async function GET(req: NextRequest) {
         due_date: tasks.due_date, project_id: tasks.project_id, estimated_minutes: tasks.estimated_minutes,
       }).from(tasks).where(and(eq(tasks.created_by, userId), gte(tasks.created_at, new Date(since))))
     } else if (filter === 'created_by') {
-      const today = url.searchParams.get('date') ?? ''
       rows = await db.select({ status: tasks.status, due_date: tasks.due_date }).from(tasks)
         .where(eq(tasks.created_by, userId))
     } else if (projectId) {
@@ -85,10 +84,38 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
+    const allowed = ['title', 'description', 'status', 'priority', 'due_date', 'due_time',
+                     'is_recurring', 'recurrence_rule', 'assigned_to', 'position',
+                     'estimated_minutes', 'project_id', 'parent_id', 'section_id'] as const
+    const insertData: Record<string, unknown> = {}
+    for (const key of allowed) {
+      if (key in body) insertData[key] = body[key]
+    }
     const [row] = await db.insert(tasks).values({
-      ...body,
+      ...insertData,
       created_by: session.user.id,
-    }).returning()
+    } as any).returning()
+
+    // Log "added" activity
+    try {
+      let projectName: string | null = null
+      if (row.project_id) {
+        const [proj] = await db.select({ name: projects.name }).from(projects)
+          .where(eq(projects.id, row.project_id)).limit(1)
+        projectName = proj?.name ?? null
+      }
+      await db.insert(activity_log).values({
+        user_id: session.user.id,
+        task_id: row.id,
+        project_id: row.project_id ?? undefined,
+        action: 'added',
+        task_title: row.title,
+        project_name: projectName ?? 'Inbox',
+      })
+    } catch (logErr) {
+      console.error('activity log error:', logErr)
+    }
+
     return NextResponse.json(row)
   } catch (e) {
     console.error(e)

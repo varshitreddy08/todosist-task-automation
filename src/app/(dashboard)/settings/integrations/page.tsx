@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession, signIn } from 'next-auth/react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,8 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import {
-  MessageSquare, Mail, Key, Plus, Trash2, Copy, CheckCircle2,
-  Loader2, RefreshCw, X, ExternalLink, Wifi, WifiOff, Shield, Puzzle, Download
+  Mail, Key, Plus, Trash2, Copy, CheckCircle2,
+  Loader2, X, ExternalLink, WifiOff, Shield, Puzzle, Download
 } from 'lucide-react'
 
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
@@ -20,79 +20,22 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 type ApiToken = { id: string; name: string; last_used: string | null; created_at: string; token_preview: string }
-type WaStatus = { connected: boolean; state?: string }
 
 export default function IntegrationsPage() {
   const { data: session, update: updateSession } = useSession()
-  const [waStep, setWaStep] = useState<'idle' | 'credentials' | 'qr' | 'connected'>('idle')
-  const [waInstanceId, setWaInstanceId] = useState('')
-  const [waApiToken, setWaApiToken] = useState('')
-  const [waStatus, setWaStatus] = useState<WaStatus | null>(null)
-  const [qrData, setQrData] = useState<{ message: string; type: string } | null>(null)
-  const [qrLoading, setQrLoading] = useState(false)
   const [tokens, setTokens] = useState<ApiToken[]>([])
   const [newTokenName, setNewTokenName] = useState('')
   const [createdToken, setCreatedToken] = useState('')
   const [copied, setCopied] = useState(false)
   const [creatingToken, setCreatingToken] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hasGmail = (session as any)?.has_gmail
 
   useEffect(() => {
-    loadStatus()
     loadTokens()
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
-
-  async function loadStatus() {
-    try {
-      const s = await apiFetch<WaStatus>('/api/whatsapp/status')
-      setWaStatus(s)
-      setWaStep(s.connected ? 'connected' : 'idle')
-    } catch { setWaStatus({ connected: false }) }
-  }
 
   async function loadTokens() {
     try { setTokens(await apiFetch<ApiToken[]>('/api/api-tokens')) } catch {}
-  }
-
-  async function saveWaCredentials() {
-    try {
-      await apiFetch('/api/whatsapp/qr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instance_id: waInstanceId, api_token: waApiToken }),
-      })
-      fetchQR()
-      setWaStep('qr')
-      // Poll status every 5s
-      pollRef.current = setInterval(async () => {
-        const s = await apiFetch<WaStatus>('/api/whatsapp/status')
-        setWaStatus(s)
-        if (s.connected) {
-          setWaStep('connected')
-          if (pollRef.current) clearInterval(pollRef.current)
-          toast.success('WhatsApp connected! 🎉')
-        }
-      }, 5000)
-    } catch { toast.error('Failed to save credentials') }
-  }
-
-  async function fetchQR() {
-    setQrLoading(true)
-    try {
-      const data = await apiFetch<any>('/api/whatsapp/qr')
-      setQrData(data)
-    } catch { toast.error('Failed to get QR') }
-    setQrLoading(false)
-  }
-
-  async function disconnectWa() {
-    await apiFetch('/api/whatsapp/qr', { method: 'DELETE' })
-    setWaStep('idle')
-    setWaStatus({ connected: false })
-    setQrData(null)
-    toast.success('WhatsApp disconnected')
   }
 
   async function createToken() {
@@ -112,8 +55,10 @@ export default function IntegrationsPage() {
   }
 
   async function deleteToken(id: string) {
-    await apiFetch('/api/api-tokens', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-    loadTokens()
+    try {
+      await apiFetch('/api/api-tokens', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      loadTokens()
+    } catch { toast.error('Failed to delete token') }
   }
 
   function copyToken(t: string) {
@@ -126,100 +71,8 @@ export default function IntegrationsPage() {
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Integrations</h1>
-        <p className="text-muted-foreground text-sm mt-1">Connect WhatsApp, Gmail, and manage API tokens for the Chrome extension</p>
+        <p className="text-muted-foreground text-sm mt-1">Connect Gmail and manage API tokens for the Chrome extension</p>
       </div>
-
-      {/* ── WhatsApp ── */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-950/30 flex items-center justify-center">
-              <MessageSquare className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="font-semibold">WhatsApp</p>
-              <p className="text-xs text-muted-foreground">Send messages from your personal number</p>
-            </div>
-          </div>
-          {waStatus && (
-            <Badge className={`gap-1.5 ${waStatus.connected ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-0' : 'bg-muted text-muted-foreground border-0'}`}>
-              {waStatus.connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-              {waStatus.connected ? 'Connected' : 'Disconnected'}
-            </Badge>
-          )}
-        </div>
-
-        <AnimatePresence mode="wait">
-          {waStep === 'connected' && (
-            <motion.div key="connected" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 text-sm">
-                <CheckCircle2 className="w-4 h-4" /> WhatsApp is connected and ready to send messages
-              </div>
-              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={disconnectWa}>
-                <X className="w-3.5 h-3.5 mr-1.5" /> Disconnect WhatsApp
-              </Button>
-            </motion.div>
-          )}
-
-          {waStep === 'idle' && (
-            <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Uses <a href="https://green-api.com" target="_blank" rel="noopener" className="text-primary hover:underline">Green API</a> (free — 1,500 messages/month).
-                Create a free instance, then enter your credentials below.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" className="gradient-primary text-white border-0" onClick={() => setWaStep('credentials')}>
-                  Connect WhatsApp
-                </Button>
-                <a href="https://green-api.com" target="_blank" rel="noopener" className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border text-sm font-medium hover:bg-muted transition-colors">
-                  Get free API <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            </motion.div>
-          )}
-
-          {waStep === 'credentials' && (
-            <motion.div key="creds" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-              <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground">Setup steps:</p>
-                <p>1. Go to <a href="https://green-api.com" target="_blank" className="text-primary">green-api.com</a> → sign up free</p>
-                <p>2. Create an instance → get Instance ID and API Token</p>
-                <p>3. Paste them below → scan the QR with your WhatsApp</p>
-              </div>
-              <Input placeholder="Instance ID (e.g. 1101234567)" value={waInstanceId} onChange={e => setWaInstanceId(e.target.value)} />
-              <Input placeholder="API Token" value={waApiToken} onChange={e => setWaApiToken(e.target.value)} type="password" />
-              <div className="flex gap-2">
-                <Button className="flex-1 gradient-primary text-white border-0" disabled={!waInstanceId || !waApiToken} onClick={saveWaCredentials}>
-                  Save & Show QR Code
-                </Button>
-                <Button variant="outline" onClick={() => setWaStep('idle')}><X className="w-4 h-4" /></Button>
-              </div>
-            </motion.div>
-          )}
-
-          {waStep === 'qr' && (
-            <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4 text-center">
-              <p className="text-sm text-muted-foreground">Open WhatsApp on your phone → Linked Devices → Link a Device → scan:</p>
-              {qrLoading ? (
-                <div className="flex items-center justify-center h-48"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
-              ) : qrData?.type === 'qrCode' ? (
-                <div className="flex justify-center">
-                  <img src={`data:image/png;base64,${qrData.message}`} alt="WhatsApp QR" className="w-48 h-48 rounded-xl border" />
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">{qrData?.message ?? 'Waiting for QR...'}</p>
-              )}
-              <div className="flex gap-2 justify-center">
-                <Button variant="outline" size="sm" onClick={fetchQR}><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Refresh QR</Button>
-                <Button variant="outline" size="sm" onClick={() => { setWaStep('idle'); if (pollRef.current) clearInterval(pollRef.current) }}>Cancel</Button>
-              </div>
-              <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" /> Waiting for you to scan...
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Card>
 
       {/* ── Gmail ── */}
       <Card className="p-5">
@@ -245,9 +98,11 @@ export default function IntegrationsPage() {
             </div>
             <p className="text-xs text-muted-foreground">AI-scheduled emails will send directly from your Gmail inbox.</p>
             <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={async () => {
-              await fetch('/api/integrations/gmail/disconnect', { method: 'DELETE' })
-              await updateSession({ has_gmail: false })
-              toast.success('Gmail disconnected')
+              try {
+                await apiFetch('/api/integrations/gmail/disconnect', { method: 'DELETE' })
+                await updateSession({ has_gmail: false })
+                toast.success('Gmail disconnected')
+              } catch { toast.error('Failed to disconnect Gmail') }
             }}>
               <X className="w-3.5 h-3.5 mr-1.5" /> Disconnect Gmail
             </Button>

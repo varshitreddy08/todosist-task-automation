@@ -1,16 +1,25 @@
-// Background service worker — handles alarms and notifications
+// Background service worker
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('TaskFlow extension installed')
+  console.log('TaskFlow extension v1.1 installed')
 })
 
-// Pomodoro alarm notifications
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'pomodoro') {
-    chrome.notifications.create({
+// Handle messages from popup
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'POMODORO_WORK_DONE') {
+    chrome.notifications.create(`pomodoro-work-${Date.now()}`, {
       type: 'basic',
       iconUrl: 'icons/icon48.png',
-      title: 'TaskFlow — Time\'s up!',
-      message: 'Your study session is complete. Take a break!',
+      title: '🍅 Pomodoro complete!',
+      message: `Work session done — cycle #${msg.cycles} complete. Take a 5-minute break!`,
+      priority: 2,
+    })
+  }
+  if (msg.type === 'POMODORO_BREAK_DONE') {
+    chrome.notifications.create(`pomodoro-break-${Date.now()}`, {
+      type: 'basic',
+      iconUrl: 'icons/icon48.png',
+      title: '☕ Break over!',
+      message: 'Time to focus again. Click the extension to start your next session.',
       priority: 2,
     })
   }

@@ -17,7 +17,8 @@
       "Bash(npm run *)",
       "Bash(node create-icons.js)",
       "PowerShell(Get-Random *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/automations/preview-email -H \"Content-Type: application/json\" -d \"{\\\\\"ai_prompt\\\\\":\\\\\"test email about project update\\\\\",\\\\\"to_email\\\\\":\\\\\"test@gmail.com\\\\\",\\\\\"tone\\\\\":\\\\\"professional\\\\\"}\")"
     ]
   }
 }

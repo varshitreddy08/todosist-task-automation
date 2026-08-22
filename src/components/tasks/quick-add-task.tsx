@@ -37,6 +37,9 @@ export function QuickAddTask() {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: {
+      due_date: new Date().toISOString().split('T')[0],
+    },
   })
 
   async function onSubmit(data: FormData) {
@@ -65,7 +68,7 @@ export function QuickAddTask() {
         toast.success('Task created!')
       }
 
-      reset()
+      reset({ due_date: new Date().toISOString().split('T')[0] })
       setPriority('p4')
       setEmailReminder(false)
       setQuickAddOpen(false)
@@ -75,7 +78,11 @@ export function QuickAddTask() {
   }
 
   function handleClose(open: boolean) {
-    if (!open) { reset(); setPriority('p4'); setEmailReminder(false) }
+    if (!open) {
+      reset({ due_date: new Date().toISOString().split('T')[0] })
+      setPriority('p4')
+      setEmailReminder(false)
+    }
     setQuickAddOpen(open)
   }
 

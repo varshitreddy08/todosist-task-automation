@@ -19,6 +19,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           scope: 'openid email profile https://www.googleapis.com/auth/gmail.send',
@@ -30,6 +31,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     GitHub({
       clientId: process.env.GITHUB_ID,
       clientSecret: process.env.GITHUB_SECRET,
+      allowDangerousEmailAccountLinking: true,
     }),
     Credentials({
       credentials: {

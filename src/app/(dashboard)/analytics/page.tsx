@@ -1,230 +1,384 @@
 'use client'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { format, addDays, startOfWeek, startOfMonth, subMonths } from 'date-fns'
-import { Card } from '@/components/ui/card'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { motion } from 'framer-motion'
-import {
-  BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts'
-import { TrendingUp, TrendingDown, CheckCircle2, Flame, Target, Zap, Brain, Loader2 } from 'lucide-react'
+import { format, isSameDay, isYesterday, formatDistanceToNow } from 'date-fns'
+import { useProjects } from '@/hooks/useProjects'
+import { cn } from '@/lib/utils'
+import { ChevronDown, CheckCircle2, Loader2 } from 'lucide-react'
+import { useSession } from 'next-auth/react'
 
-const PRIORITY_COLORS = { p1: '#ef4444', p2: '#f97316', p3: '#3b82f6', p4: '#6b7280' }
-const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// ── Types ────────────────────────────────────────────────────────────────────
+type Action = 'added' | 'completed' | 'uncompleted' | 'changed_priority' | 'set_date' | 'changed_date' | 'deleted'
 
-async function apiFetch<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
+interface ActivityItem {
+  id: string
+  action: Action
+  task_title: string
+  project_name: string | null
+  old_value: string | null
+  new_value: string | null
+  created_at: string
 }
 
-export default function AnalyticsPage() {
-  const today = new Date()
-  const todayStr = format(today, 'yyyy-MM-dd')
+// ── Filter options ───────────────────────────────────────────────────────────
+const ACTION_OPTIONS = [
+  { value: '',                  label: 'All actions' },
+  { value: 'completed',         label: 'Completed tasks' },
+  { value: 'added',             label: 'Added tasks' },
+  { value: 'changed_priority',  label: 'Priority changes' },
+  { value: 'set_date',          label: 'Date set' },
+  { value: 'changed_date',      label: 'Date changes' },
+  { value: 'deleted',           label: 'Deleted tasks' },
+]
 
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['analytics-tasks'],
-    queryFn: () => {
-      const since = format(subMonths(today, 6), 'yyyy-MM-dd')
-      return apiFetch<{ id: string; status: string; priority: string; created_at: string; completed_at: string | null; due_date: string | null; project_id: string | null; estimated_minutes: number | null }[]>(`/api/tasks?filter=analytics&since=${since}T00:00:00`)
-    },
-  })
+const DATE_OPTIONS = [
+  { value: '',       label: 'Any date' },
+  { value: 'today',  label: 'Today' },
+  { value: 'week',   label: 'Last 7 days' },
+  { value: 'month',  label: 'Last 30 days' },
+]
 
-  const { data: projects = [] } = useQuery({
-    queryKey: ['analytics-projects'],
-    queryFn: () => apiFetch<{ id: string; name: string }[]>('/api/projects'),
-  })
+// ── Dropdown component ───────────────────────────────────────────────────────
+function FilterDropdown({ label, options, value, onChange }: {
+  label: string
+  options: { value: string; label: string }[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
-  const thisMonthStart = format(startOfMonth(today), 'yyyy-MM-dd')
-  const lastMonthStart = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd')
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
 
-  const thisMonth = tasks.filter(t => (t.created_at as string).startsWith(thisMonthStart.slice(0, 7)))
-  const lastMonth = tasks.filter(t => (t.created_at as string).startsWith(lastMonthStart.slice(0, 7)))
-
-  const thisCompleted = thisMonth.filter(t => t.status === 'completed').length
-  const lastCompleted = lastMonth.filter(t => t.status === 'completed').length
-  const completedDiff = thisCompleted - lastCompleted
-
-  const thisRate = thisMonth.length > 0 ? Math.round((thisCompleted / thisMonth.length) * 100) : 0
-  const lastRate = lastMonth.length > 0 ? Math.round((lastCompleted / lastMonth.length) * 100) : 0
-  const rateDiff = thisRate - lastRate
-
-  const doneDates = new Set(tasks.filter(t => t.completed_at).map(t => (t.completed_at as string).split('T')[0]))
-  let streak = 0
-  let checkDay = new Date()
-  if (!doneDates.has(format(checkDay, 'yyyy-MM-dd'))) checkDay = addDays(checkDay, -1)
-  while (doneDates.has(format(checkDay, 'yyyy-MM-dd'))) { streak++; checkDay = addDays(checkDay, -1) }
-
-  const score = Math.min(100, Math.round(thisRate * 0.7 + Math.min(streak * 2, 30)))
-  const lastScore = Math.min(100, Math.round(lastRate * 0.7))
-  const scoreDiff = score - lastScore
-
-  const overdueP1 = tasks.filter(t => t.status !== 'completed' && t.priority === 'p1' && t.due_date && t.due_date < todayStr).length
-
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 })
-  const weeklyData = WEEK_LABELS.map((day, i) => {
-    const ds = format(addDays(weekStart, i), 'yyyy-MM-dd')
-    const completed = tasks.filter(t => t.completed_at && (t.completed_at as string).startsWith(ds)).length
-    const created = tasks.filter(t => (t.created_at as string).startsWith(ds)).length
-    const hours = tasks.filter(t => t.completed_at && (t.completed_at as string).startsWith(ds) && t.estimated_minutes).reduce((s, t) => s + (t.estimated_minutes ?? 0), 0) / 60
-    return { day, completed, created, hours: Math.round(hours * 10) / 10 }
-  })
-
-  const monthlyData = Array.from({ length: 6 }, (_, i) => {
-    const mo = subMonths(today, 5 - i)
-    const prefix = format(mo, 'yyyy-MM')
-    const mt = tasks.filter(t => (t.created_at as string).startsWith(prefix))
-    const mc = mt.filter(t => t.status === 'completed').length
-    return { month: format(mo, 'MMM'), completed: mc, rate: mt.length > 0 ? Math.round((mc / mt.length) * 100) : 0 }
-  })
-
-  const projectData = projects.map(p => {
-    const pt = tasks.filter(t => t.project_id === p.id)
-    return { name: p.name.length > 14 ? p.name.slice(0, 14) + '…' : p.name, completed: pt.filter(t => t.status === 'completed').length, pending: pt.filter(t => t.status !== 'completed').length }
-  }).filter(p => p.completed + p.pending > 0)
-
-  const priorityDist = (Object.keys(PRIORITY_COLORS) as Array<keyof typeof PRIORITY_COLORS>)
-    .map(k => ({ name: `${k.toUpperCase()} – ${k === 'p1' ? 'Urgent' : k === 'p2' ? 'High' : k === 'p3' ? 'Medium' : 'Low'}`, value: tasks.filter(t => t.priority === k).length, color: PRIORITY_COLORS[k] }))
-    .filter(d => d.value > 0)
-
-  const hourBuckets: Record<number, number> = {}
-  tasks.filter(t => t.completed_at).forEach(t => { const h = new Date(t.completed_at as string).getHours(); hourBuckets[h] = (hourBuckets[h] ?? 0) + 1 })
-  const topEntry = Object.entries(hourBuckets).sort(([, a], [, b]) => b - a)[0]
-  const peakHour = topEntry ? parseInt(topEntry[0]) : null
-
-  const insights = [
-    { title: 'Peak Performance', desc: peakHour !== null ? `You complete the most tasks around ${peakHour}:00–${peakHour + 1}:00. Schedule your deep work then.` : 'Complete more tasks to discover your peak productivity hours.', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-950/30' },
-    { title: 'Completion Trend', desc: rateDiff > 0 ? `Completion rate up ${rateDiff}% vs last month — great momentum!` : rateDiff < 0 ? `Completion rate down ${Math.abs(rateDiff)}% vs last month. Try smaller task breakdowns.` : tasks.length === 0 ? 'Add your first tasks to track completion trends.' : 'Completion rate is steady vs last month.', icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
-    { title: overdueP1 > 0 ? 'Overdue Alert' : 'No Overdue P1s', desc: overdueP1 > 0 ? `${overdueP1} P1 task${overdueP1 > 1 ? 's are' : ' is'} overdue. Prioritize ${overdueP1 > 1 ? 'these' : 'this'} today.` : 'No overdue urgent tasks right now — great job staying on top of things!', icon: Target, color: overdueP1 > 0 ? 'text-red-500' : 'text-emerald-500', bg: overdueP1 > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30' },
-    { title: 'Streak', desc: streak > 1 ? `${streak}-day streak! Keep completing tasks daily to keep it going.` : streak === 1 ? `1-day streak started — complete tasks tomorrow to keep it alive!` : 'Complete at least one task today to start a streak.', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-950/30' },
-  ]
-
-  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-
-  function diffLabel(n: number, unit = '') {
-    if (n === 0) return { text: 'Same as last month', positive: true }
-    return { text: `${n > 0 ? '+' : ''}${n}${unit} vs last month`, positive: n > 0 }
-  }
-
-  const kpis = [
-    { label: 'Tasks Completed', value: thisCompleted, sub: diffLabel(completedDiff), icon: CheckCircle2, color: 'text-primary' },
-    { label: 'Completion Rate', value: `${thisRate}%`, sub: diffLabel(rateDiff, '%'), icon: TrendingUp, color: 'text-emerald-500' },
-    { label: 'Current Streak', value: streak > 0 ? `${streak} day${streak > 1 ? 's' : ''}` : '—', sub: { text: streak > 0 ? 'days in a row' : 'No streak yet', positive: streak > 0 }, icon: Flame, color: 'text-orange-500' },
-    { label: 'Productivity Score', value: tasks.length > 0 ? `${score}/100` : '—', sub: diffLabel(scoreDiff, 'pts'), icon: Zap, color: 'text-violet-500' },
-  ]
-
-  const noTasksYet = tasks.length === 0
+  const selected = options.find(o => o.value === value)
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl font-bold">Analytics</h1>
-        <p className="text-muted-foreground text-sm mt-1">Track your productivity and performance</p>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.label} className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">{kpi.label}</p>
-                <p className="text-2xl font-bold">{kpi.value}</p>
-                <p className={`text-xs mt-1 flex items-center gap-1 ${kpi.sub.positive ? 'text-emerald-500' : 'text-red-500'}`}>
-                  {kpi.sub.positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}{kpi.sub.text}
-                </p>
-              </div>
-              <div className={`w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center ${kpi.color}`}><kpi.icon className="w-5 h-5" /></div>
-            </div>
-          </Card>
-        ))}
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <Tabs defaultValue="weekly">
-          <TabsList><TabsTrigger value="weekly">Weekly</TabsTrigger><TabsTrigger value="monthly">Monthly</TabsTrigger><TabsTrigger value="projects">By Project</TabsTrigger></TabsList>
-          <TabsContent value="weekly" className="mt-4">
-            {noTasksYet ? <EmptyChart message="Add tasks with due dates to see weekly breakdowns." /> : (
-              <div className="grid lg:grid-cols-2 gap-6">
-                <Card className="p-5">
-                  <h3 className="font-semibold mb-4">Tasks Completed vs Created</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="day" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} allowDecimals={false} /><Tooltip contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8 }} /><Legend /><Bar dataKey="completed" name="Completed" fill="oklch(0.55 0.22 264)" radius={[4, 4, 0, 0]} /><Bar dataKey="created" name="Created" fill="oklch(0.55 0.22 264 / 30%)" radius={[4, 4, 0, 0]} /></BarChart>
-                  </ResponsiveContainer>
-                </Card>
-                <Card className="p-5">
-                  <h3 className="font-semibold mb-1">Estimated Hours</h3>
-                  <p className="text-xs text-muted-foreground mb-4">Based on task estimated minutes</p>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="day" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8 }} /><Area type="monotone" dataKey="hours" name="Hours" fill="oklch(0.55 0.22 264 / 20%)" stroke="oklch(0.55 0.22 264)" strokeWidth={2} /></AreaChart>
-                  </ResponsiveContainer>
-                </Card>
-              </div>
-            )}
-          </TabsContent>
-          <TabsContent value="monthly" className="mt-4">
-            {noTasksYet ? <EmptyChart message="Add tasks to see monthly trends over time." /> : (
-              <div className="grid lg:grid-cols-2 gap-6">
-                <Card className="p-5">
-                  <h3 className="font-semibold mb-4">Tasks Completed per Month</h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={monthlyData}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} allowDecimals={false} /><Tooltip contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8 }} /><Bar dataKey="completed" name="Completed" fill="oklch(0.55 0.22 264)" radius={[4, 4, 0, 0]} /></BarChart>
-                  </ResponsiveContainer>
-                </Card>
-                <Card className="p-5">
-                  <h3 className="font-semibold mb-4">Monthly Completion Rate</h3>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <AreaChart data={monthlyData}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} unit="%" domain={[0, 100]} /><Tooltip contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8 }} formatter={(v) => [`${v}%`, 'Rate']} /><Area type="monotone" dataKey="rate" name="Completion %" fill="oklch(0.55 0.22 264 / 20%)" stroke="oklch(0.55 0.22 264)" strokeWidth={2} /></AreaChart>
-                  </ResponsiveContainer>
-                </Card>
-              </div>
-            )}
-          </TabsContent>
-          <TabsContent value="projects" className="mt-4">
-            {projectData.length === 0 ? <EmptyChart message="Create projects and add tasks to see a project breakdown." /> : (
-              <div className="grid lg:grid-cols-2 gap-6">
-                <Card className="p-5">
-                  <h3 className="font-semibold mb-4">Tasks by Project</h3>
-                  <ResponsiveContainer width="100%" height={Math.max(250, projectData.length * 52)}>
-                    <BarChart data={projectData} layout="vertical"><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} /><YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 11 }} /><Tooltip contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8 }} /><Legend /><Bar dataKey="completed" name="Completed" stackId="a" fill="oklch(0.55 0.22 264)" /><Bar dataKey="pending" name="Pending" stackId="a" fill="oklch(0.55 0.22 264 / 25%)" radius={[0, 4, 4, 0]} /></BarChart>
-                  </ResponsiveContainer>
-                </Card>
-                <Card className="p-5">
-                  <h3 className="font-semibold mb-4">Task Priority Distribution</h3>
-                  {priorityDist.length === 0 ? <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">No tasks yet</div> : (
-                    <ResponsiveContainer width="100%" height={250}>
-                      <PieChart><Pie data={priorityDist} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }: { name?: string; percent?: number }) => `${(name ?? '').split(' – ')[0]} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>{priorityDist.map((entry, i) => <Cell key={i} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8 }} formatter={(v, _, props) => [v, (props as { payload?: { name?: string } }).payload?.name ?? '']} /></PieChart>
-                    </ResponsiveContainer>
-                  )}
-                </Card>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-        <h2 className="font-semibold text-lg mb-4 flex items-center gap-2"><Brain className="w-5 h-5 text-primary" /> Productivity Insights</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {insights.map((ins) => (
-            <Card key={ins.title} className="p-4">
-              <div className="flex items-start gap-3">
-                <div className={`w-9 h-9 rounded-lg ${ins.bg} flex items-center justify-center flex-shrink-0`}><ins.icon className={`w-5 h-5 ${ins.color}`} /></div>
-                <div><h4 className="font-medium text-sm mb-1">{ins.title}</h4><p className="text-xs text-muted-foreground leading-relaxed">{ins.desc}</p></div>
-              </div>
-            </Card>
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] border transition-colors select-none',
+          value
+            ? 'border-[#db4c3f] text-[#db4c3f] bg-red-50 dark:bg-red-950/20 dark:border-red-500 dark:text-red-400'
+            : 'border-[#ddd] dark:border-border text-[#555] dark:text-muted-foreground hover:border-[#bbb] dark:hover:border-muted-foreground'
+        )}
+      >
+        {selected?.label ?? label}
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 w-48 bg-background border border-border rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false) }}
+              className={cn(
+                'w-full text-left px-3 py-2 text-[13px] hover:bg-muted transition-colors',
+                opt.value === value ? 'text-[#db4c3f] font-medium' : 'text-foreground'
+              )}
+            >
+              {opt.label}
+            </button>
           ))}
         </div>
-      </motion.div>
+      )}
     </div>
   )
 }
 
-function EmptyChart({ message }: { message: string }) {
+// ── Project dropdown ─────────────────────────────────────────────────────────
+function ProjectDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { data: projects = [] } = useProjects()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const options = [
+    { value: '', label: 'All projects' },
+    { value: 'inbox', label: 'Inbox' },
+    ...projects.map(p => ({ value: p.id, label: p.name })),
+  ]
+  const selected = options.find(o => o.value === value)
+
   return (
-    <Card className="p-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-      <CheckCircle2 className="w-10 h-10 opacity-20" />
-      <p className="text-sm">{message}</p>
-    </Card>
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] border transition-colors select-none',
+          value
+            ? 'border-[#db4c3f] text-[#db4c3f] bg-red-50 dark:bg-red-950/20 dark:border-red-500 dark:text-red-400'
+            : 'border-[#ddd] dark:border-border text-[#555] dark:text-muted-foreground hover:border-[#bbb] dark:hover:border-muted-foreground'
+        )}
+      >
+        {selected?.label ?? 'All projects'}
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 w-48 bg-background border border-border rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false) }}
+              className={cn(
+                'w-full text-left px-3 py-2 text-[13px] hover:bg-muted transition-colors',
+                opt.value === value ? 'text-[#db4c3f] font-medium' : 'text-foreground'
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Date group label ─────────────────────────────────────────────────────────
+function dateGroupLabel(dateStr: string): string {
+  const date = new Date(dateStr)
+  const d = format(date, 'd MMM')
+  const wd = format(date, 'EEEE')
+  if (isSameDay(date, new Date())) return `${d} · Today · ${wd}`
+  if (isYesterday(date)) return `${d} · Yesterday · ${wd}`
+  return `${d} · ${wd}`
+}
+
+// ── Relative time ─────────────────────────────────────────────────────────────
+function timeLabel(isoStr: string): string {
+  const date = new Date(isoStr)
+  const diffMs = Date.now() - date.getTime()
+  if (diffMs < 24 * 60 * 60 * 1000) {
+    return formatDistanceToNow(date, { addSuffix: true })
+  }
+  return format(date, 'd MMM yyyy HH:mm')
+}
+
+// ── Priority display ─────────────────────────────────────────────────────────
+function priorityLabel(val: string): string {
+  return val.toUpperCase() // p1→P1, p2→P2 etc.
+}
+
+// ── Action description ───────────────────────────────────────────────────────
+function ActionDescription({ item }: { item: ActivityItem }) {
+  const isCompleted = item.action === 'completed'
+  const isUncompleted = item.action === 'uncompleted'
+  const isAdded = item.action === 'added'
+  const isDeleted = item.action === 'deleted'
+  const isPriority = item.action === 'changed_priority'
+  const isSetDate = item.action === 'set_date'
+  const isChangedDate = item.action === 'changed_date'
+
+  const taskName = (
+    <span className={cn(
+      'text-[13px] px-1 py-0.5 rounded bg-[#f5f5f5] dark:bg-muted text-[#555] dark:text-muted-foreground',
+      isCompleted && 'line-through'
+    )}>
+      {item.task_title}
+    </span>
+  )
+
+  if (isCompleted) return <span className="text-[13px] text-[#333] dark:text-foreground">completed {taskName}</span>
+  if (isUncompleted) return <span className="text-[13px] text-[#333] dark:text-foreground">uncompleted {taskName}</span>
+  if (isAdded) return <span className="text-[13px] text-[#333] dark:text-foreground">added {taskName}</span>
+  if (isDeleted) return <span className="text-[13px] text-[#333] dark:text-foreground">deleted {taskName}</span>
+  if (isPriority) return (
+    <span className="text-[13px] text-[#333] dark:text-foreground">
+      changed the priority of {taskName}{' '}
+      to <span className="font-medium">{priorityLabel(item.new_value ?? '')}</span>
+    </span>
+  )
+  if (isSetDate) return (
+    <span className="text-[13px] text-[#333] dark:text-foreground">
+      set the date of {taskName}{' '}
+      to <span className="font-medium">{item.new_value}</span>
+    </span>
+  )
+  if (isChangedDate) return (
+    <span className="text-[13px] text-[#333] dark:text-foreground">
+      changed the date of {taskName}{' '}
+      to <span className="font-medium">{item.new_value}</span>
+    </span>
+  )
+  return <span className="text-[13px] text-[#333] dark:text-foreground">{item.action} {taskName}</span>
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
+export default function ReportingPage() {
+  const { data: session } = useSession()
+  const [actionFilter, setActionFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState('')
+
+  const { data: items = [], isLoading } = useQuery<ActivityItem[]>({
+    queryKey: ['activity', actionFilter, projectFilter, dateFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (actionFilter) params.set('action', actionFilter)
+      if (projectFilter && projectFilter !== 'inbox') params.set('project', projectFilter)
+      if (dateFilter) params.set('date', dateFilter)
+      const res = await fetch(`/api/activity?${params}`)
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+  })
+
+  // Filter by inbox (project_name === 'Inbox') client-side
+  const filtered = projectFilter === 'inbox'
+    ? items.filter(i => i.project_name === 'Inbox')
+    : items
+
+  // Group by calendar date
+  const groups: { dateStr: string; label: string; items: ActivityItem[] }[] = []
+  for (const item of filtered) {
+    const dateStr = item.created_at.split('T')[0]
+    const existing = groups.find(g => g.dateStr === dateStr)
+    if (existing) {
+      existing.items.push(item)
+    } else {
+      groups.push({ dateStr, label: dateGroupLabel(item.created_at), items: [item] })
+    }
+  }
+
+  const displayName = session?.user?.name?.split(' ')[0] ?? 'You'
+  const initials = (session?.user?.name ?? 'U').slice(0, 1).toUpperCase()
+
+  // Compute title
+  const actionLabel = ACTION_OPTIONS.find(o => o.value === actionFilter)?.label ?? 'All actions'
+  const pageTitle = actionFilter
+    ? `Reporting: ${actionLabel}`
+    : 'Reporting: All'
+
+  return (
+    <div style={{ maxWidth: 860 }} className="mx-auto px-10 py-10">
+      {/* Title */}
+      <h1 className="text-[28px] font-extrabold text-[#202020] dark:text-foreground mb-5">
+        {pageTitle}
+      </h1>
+
+      {/* Filter pills */}
+      <div className="flex flex-wrap items-center gap-2 mb-8">
+        <FilterDropdown
+          label="Personal workspace"
+          options={[{ value: '', label: 'Personal workspace' }]}
+          value=""
+          onChange={() => {}}
+        />
+
+        <ProjectDropdown value={projectFilter} onChange={setProjectFilter} />
+
+        <FilterDropdown
+          label={displayName}
+          options={[{ value: '', label: displayName }]}
+          value=""
+          onChange={() => {}}
+        />
+
+        <FilterDropdown
+          label="All actions"
+          options={ACTION_OPTIONS}
+          value={actionFilter}
+          onChange={setActionFilter}
+        />
+
+        <FilterDropdown
+          label="Any date"
+          options={DATE_OPTIONS}
+          value={dateFilter}
+          onChange={setDateFilter}
+        />
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="w-5 h-5 animate-spin text-[#aaa]" />
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-4 text-[#aaa]">
+          <CheckCircle2 className="w-12 h-12 opacity-30" />
+          <p className="text-[14px]">No activity yet. Start completing tasks to see your history here.</p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {groups.map(group => (
+            <div key={group.dateStr}>
+              {/* Date header */}
+              <div className="flex items-center gap-4 mb-1">
+                <h2 className="text-[14px] font-semibold text-[#202020] dark:text-foreground whitespace-nowrap">
+                  {group.label}
+                </h2>
+                <span className="text-[13px] text-[#aaa] dark:text-muted-foreground">{group.items.length}</span>
+              </div>
+              <div className="h-px bg-[#f0f0f0] dark:bg-border mb-3" />
+
+              {/* Activity items */}
+              <div className="space-y-0">
+                {group.items.map(item => (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-3 py-3 border-b border-[#f5f5f5] dark:border-border/40 last:border-0"
+                  >
+                    {/* Avatar */}
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center flex-shrink-0 relative">
+                      <span className="text-white text-[13px] font-bold">{initials}</span>
+                      {item.action === 'completed' && (
+                        <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-600 border-2 border-white dark:border-background flex items-center justify-center">
+                          <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 text-white" fill="none">
+                            <path d="M2 5l2 2L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex flex-wrap items-baseline gap-1.5">
+                          <span className="text-[13px] font-semibold text-[#202020] dark:text-foreground">
+                            {displayName}
+                          </span>
+                          <span className="text-[11px] text-[#aaa] dark:text-muted-foreground bg-[#f5f5f5] dark:bg-muted px-1.5 py-0.5 rounded-full">
+                            You
+                          </span>
+                          <ActionDescription item={item} />
+                        </div>
+
+                        {/* Right: project + time */}
+                        <div className="flex items-center gap-2 flex-shrink-0 text-[12px] text-[#aaa] dark:text-muted-foreground whitespace-nowrap">
+                          <span>{item.project_name ?? 'Inbox'}</span>
+                          <span>·</span>
+                          <span>{timeLabel(item.created_at)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* End of history */}
+          {filtered.length > 0 && (
+            <p className="text-center text-[13px] text-[#aaa] dark:text-muted-foreground py-4">
+              That&apos;s it. No more history to load.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

@@ -11,7 +11,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useProjects, useCreateProject } from '@/hooks/useProjects'
-import { useWorkspace } from '@/hooks/useWorkspace'
 import { toast } from 'sonner'
 import { Plus, Search, Grid3X3, List, Loader2, FolderOpen, Star } from 'lucide-react'
 
@@ -28,7 +27,6 @@ export default function ProjectsPage() {
   const [icon, setIcon] = useState(ICONS[0])
 
   const router = useRouter()
-  const workspaceId = useWorkspace()
   const { data: projects = [], isLoading } = useProjects()
   const createProject = useCreateProject()
 
@@ -41,9 +39,9 @@ export default function ProjectsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !workspaceId) return
+    if (!name.trim()) return
     try {
-      await createProject.mutateAsync({ name: name.trim(), description: desc.trim() || undefined, color, icon, workspace_id: workspaceId, is_favorite: false })
+      await createProject.mutateAsync({ name: name.trim(), description: desc.trim() || undefined, color, icon, is_favorite: false })
       toast.success('Project created!')
       setOpen(false)
       resetForm()

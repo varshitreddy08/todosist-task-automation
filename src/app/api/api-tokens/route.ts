@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { db } from '@/db'
 import { api_tokens } from '@/db/schema'
-import { eq, desc } from 'drizzle-orm'
+import { and, eq, desc } from 'drizzle-orm'
 import crypto from 'crypto'
 
 export async function GET() {
@@ -48,6 +48,6 @@ export async function DELETE(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await req.json()
-  await db.delete(api_tokens).where(eq(api_tokens.id, id))
+  await db.delete(api_tokens).where(and(eq(api_tokens.id, id), eq(api_tokens.user_id, session.user.id)))
   return NextResponse.json({ success: true })
 }

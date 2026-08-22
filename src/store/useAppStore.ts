@@ -52,7 +52,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
         viewMode: state.viewMode,
-        currentWorkspaceId: state.currentWorkspaceId,
+        // currentWorkspaceId is intentionally NOT persisted — stale IDs break FK constraints
       }),
     }
   )

@@ -204,9 +204,13 @@ export function DashboardSidebar({ user }: { user: AppUser }) {
           </div>
           Add task
         </button>
-        <button className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground flex-shrink-0">
+        <Link
+          href="/history"
+          title="Completed history"
+          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
+        >
           <Activity className="w-[15px] h-[15px]" />
-        </button>
+        </Link>
       </div>
 
       {/* ── Search ── */}

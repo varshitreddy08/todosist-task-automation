@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Flame, ChevronDown, ChevronRight, Plus, Flag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TaskDatePicker } from '@/components/shared/task-date-picker'
+import { AddSectionInline } from '@/components/tasks/add-section-inline'
+import { useCompleteWithUndo } from '@/hooks/useCompleteWithUndo'
 import type { Task } from '@/types'
 
 const TODAY = new Date().toISOString().split('T')[0]
@@ -293,6 +295,7 @@ export default function TodayPage() {
     },
   })
 
+  const handleToggle = useCompleteWithUndo(toggle.mutate)
   const pending = tasks.filter(t => t.status !== 'completed')
   const done = tasks.filter(t => t.status === 'completed')
 
@@ -320,23 +323,26 @@ export default function TodayPage() {
         <div>
           {/* Pending tasks */}
           {pending.map(task => (
-            <TodayTaskRow key={task.id} task={task} onToggle={() => toggle.mutate(task)} />
+            <TodayTaskRow key={task.id} task={task} onToggle={() => handleToggle(task)} />
           ))}
 
-          {/* Inline add form or + Add task button */}
+          {/* Inline add form or Add task / Add section buttons */}
           {addingTask ? (
             <InlineAddTask
               onAdd={async (title, priority, dueDate) => { await create.mutateAsync({ title, priority, dueDate }) }}
               onClose={() => setAddingTask(false)}
             />
           ) : (
-            <button
-              onClick={() => setAddingTask(true)}
-              className="flex items-center gap-2 py-1.5 px-2 text-sm text-muted-foreground hover:text-red-500 transition-colors group mt-1"
-            >
-              <Plus className="w-4 h-4 group-hover:text-red-500 transition-colors flex-shrink-0" />
-              Add task
-            </button>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+              <button
+                onClick={() => setAddingTask(true)}
+                className="inline-flex items-center gap-2 py-1.5 px-1 text-sm text-muted-foreground hover:text-red-500 transition-colors group"
+              >
+                <Plus className="w-4 h-4 group-hover:text-red-500 transition-colors flex-shrink-0" />
+                Add task
+              </button>
+              <AddSectionInline projectId={null} targetLabel="Inbox" />
+            </div>
           )}
 
           {/* Completed section */}
@@ -352,7 +358,7 @@ export default function TodayPage() {
                 Completed ({done.length})
               </button>
               {showDone && done.map(task => (
-                <TodayTaskRow key={task.id} task={task} onToggle={() => toggle.mutate(task)} />
+                <TodayTaskRow key={task.id} task={task} onToggle={() => handleToggle(task)} />
               ))}
             </div>
           )}

@@ -79,6 +79,17 @@ export const projects = pgTable('projects', {
   updated_at: timestamp('updated_at').defaultNow(),
 })
 
+export const sections = pgTable('sections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  project_id: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  position: integer('position').notNull().default(0),
+  is_collapsed: boolean('is_collapsed').notNull().default(false),
+  created_by: text('created_by').references(() => users.id),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+})
+
 export const tasks = pgTable('tasks', {
   id: uuid('id').primaryKey().defaultRandom(),
   workspace_id: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),

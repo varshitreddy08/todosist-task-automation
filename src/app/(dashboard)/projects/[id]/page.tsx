@@ -12,6 +12,8 @@ import {
   Trash2, Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AddSectionInline } from '@/components/tasks/add-section-inline'
+import { celebrateCompletion } from '@/lib/task-notify'
 import type { Task } from '@/types'
 
 const IDLE_CLS = {
@@ -159,12 +161,25 @@ export default function ProjectDetailPage() {
   }
 
   async function toggleTask(task: Task) {
-    const next = task.status === 'completed' ? 'todo' : 'completed'
+    const willComplete = task.status !== 'completed'
+    const next = willComplete ? 'completed' : 'todo'
     await updateTask.mutateAsync({
       id: task.id,
       status: next,
       completed_at: next === 'completed' ? new Date().toISOString() : null,
     })
+    if (willComplete) {
+      celebrateCompletion({
+        title: task.title,
+        onUndo: () => {
+          void updateTask.mutateAsync({
+            id: task.id,
+            status: 'todo',
+            completed_at: null,
+          })
+        },
+      })
+    }
   }
 
   if (projectLoading) {
@@ -363,16 +378,18 @@ export default function ProjectDetailPage() {
               </Button>
             </form>
           ) : (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2.5 w-full py-1.5 px-2 text-muted-foreground hover:text-foreground group transition-colors rounded-lg mt-1"
-            >
-              <div className="w-4 flex-shrink-0" />
-              <div className="w-[18px] h-[18px] rounded-full border-2 border-muted-foreground/30 flex items-center justify-center group-hover:border-primary group-hover:text-primary transition-colors flex-shrink-0">
-                <Plus className="w-2.5 h-2.5" />
-              </div>
-              <span className="text-sm group-hover:text-primary">Add task</span>
-            </button>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 px-2">
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="inline-flex items-center gap-2.5 py-1.5 text-muted-foreground hover:text-foreground group transition-colors"
+              >
+                <div className="w-[18px] h-[18px] rounded-full border-2 border-muted-foreground/30 flex items-center justify-center group-hover:border-primary group-hover:text-primary transition-colors flex-shrink-0">
+                  <Plus className="w-2.5 h-2.5" />
+                </div>
+                <span className="text-sm group-hover:text-primary">Add task</span>
+              </button>
+              <AddSectionInline projectId={id} targetLabel="this project" />
+            </div>
           )}
 
           {/* Completed tasks */}

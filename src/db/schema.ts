@@ -147,7 +147,7 @@ export const goals = pgTable('goals', {
 export const user_integrations = pgTable('user_integrations', {
   id: uuid('id').primaryKey().defaultRandom(),
   user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  provider: text('provider').notNull(), // 'whatsapp' | 'gmail'
+  provider: text('provider').notNull(), // 'whatsapp'
   config: text('config').notNull().default('{}'), // JSON
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),

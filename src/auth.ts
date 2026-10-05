@@ -20,13 +20,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
-      authorization: {
-        params: {
-          scope: 'openid email profile https://www.googleapis.com/auth/gmail.send',
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-      },
     }),
     GitHub({
       clientId: process.env.GITHUB_ID,
@@ -51,17 +44,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt' },
   pages: { signIn: '/login' },
   callbacks: {
-    jwt({ token, user, account, trigger, session: updateData }) {
+    jwt({ token, user }) {
       if (user?.id) token.id = user.id
       if (user?.name) token.name = user.name
       if (user?.email) token.email = user.email
       if (user?.image) token.picture = user.image
-      if (account?.access_token) token.google_access_token = account.access_token
-      if (account?.refresh_token) token.google_refresh_token = account.refresh_token
-      if (account?.provider === 'google') token.has_gmail = true
-      if (trigger === 'update' && updateData && 'has_gmail' in updateData) {
-        token.has_gmail = updateData.has_gmail
-      }
       return token
     },
     session({ session, token }) {
@@ -69,7 +56,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.name) session.user.name = token.name as string
       if (token.email) session.user.email = token.email as string
       if (token.picture) session.user.image = token.picture as string
-      ;(session as any).has_gmail = token.has_gmail ?? false
       return session
     },
   },
